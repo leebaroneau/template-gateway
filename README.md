@@ -31,3 +31,13 @@ docker compose up --build
 ```
 
 Coolify should use the Dockerfile build pack. No runtime start-command override is required.
+
+## Client Wrappers
+
+Client deployments should use thin wrapper repos instead of editing this template directly. See `docs/client-wrapper-contract.md`.
+
+Recommended names:
+
+- `genvest-gateway`
+- `haverford-gateway`
+- `alx-gateway`
