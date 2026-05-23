@@ -1,6 +1,10 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
+import { createHttpApp } from "./http.js";
 
 const config = loadConfig();
+const app = createHttpApp({ config });
 
-console.log(`template-gateway config loaded for ${config.apiBaseUrl}`);
+app.listen(config.port, () => {
+  console.log(`template-gateway listening on ${config.port}`);
+});
