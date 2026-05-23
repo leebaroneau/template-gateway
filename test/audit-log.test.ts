@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -20,5 +20,33 @@ describe("AuditLog", () => {
       status: "ok"
     });
     expect(JSON.parse(lines[0]).ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("returns no recent records when the log file is missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "template-gateway-audit-"));
+    const audit = new AuditLog(join(dir, "audit.jsonl"));
+
+    await expect(audit.recent()).resolves.toEqual([]);
+  });
+
+  it("returns recent JSONL records in file order with the requested limit", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "template-gateway-audit-"));
+    const path = join(dir, "audit.jsonl");
+    const audit = new AuditLog(path);
+
+    await writeFile(
+      path,
+      [
+        JSON.stringify({ ts: "2026-05-23T00:00:00.000Z", provider: "gateway", action: "first", status: "ok" }),
+        JSON.stringify({ ts: "2026-05-23T00:01:00.000Z", provider: "crm", action: "second", status: "denied" }),
+        JSON.stringify({ ts: "2026-05-23T00:02:00.000Z", provider: "mail", action: "third", status: "error" })
+      ].join("\n"),
+      "utf8"
+    );
+
+    expect(await audit.recent(2)).toEqual([
+      { ts: "2026-05-23T00:01:00.000Z", provider: "crm", action: "second", status: "denied" },
+      { ts: "2026-05-23T00:02:00.000Z", provider: "mail", action: "third", status: "error" }
+    ]);
   });
 });

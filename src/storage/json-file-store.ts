@@ -20,19 +20,22 @@ export class JsonFileStore<T extends object> {
 
   async write(value: T): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
-    const tmpPath = `${this.path}.tmp`;
+    const tmpPath = `${this.path}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
     await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
     await rename(tmpPath, this.path);
   }
 
   async update(mutator: (current: T) => T | Promise<T>): Promise<T> {
-    let nextValue!: T;
-    this.writeQueue = this.writeQueue.then(async () => {
+    const operation = this.writeQueue.catch(() => undefined).then(async () => {
       const current = await this.read();
-      nextValue = await mutator(current);
+      const nextValue = await mutator(current);
       await this.write(nextValue);
+      return nextValue;
     });
-    await this.writeQueue;
-    return nextValue;
+    this.writeQueue = operation.then(
+      () => undefined,
+      () => undefined
+    );
+    return operation;
   }
 }
