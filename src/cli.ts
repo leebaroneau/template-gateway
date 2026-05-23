@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { loadConfig as loadGatewayConfig, type GatewayConfig } from "./config.js";
 import { createProviderRegistry } from "./providers/registry.js";
@@ -75,7 +77,12 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-if (process.argv[1]?.endsWith("cli.ts") || process.argv[1]?.endsWith("cli.js")) {
+function isMainModule(): boolean {
+  const entrypoint = process.argv[1];
+  return Boolean(entrypoint && fileURLToPath(import.meta.url) === resolve(entrypoint));
+}
+
+if (isMainModule()) {
   await import("dotenv/config");
   try {
     await buildCli().parseAsync(process.argv);
