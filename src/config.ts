@@ -18,6 +18,18 @@ const configSchema = z.object({
     tokenStorePath: z.string().min(1),
     tokenStoreKey: z.string().optional(),
     scopes: z.array(z.string().min(1))
+  }),
+  pipedrive: z.object({
+    clientId: z.string().min(1).optional(),
+    clientSecret: z.string().min(1).optional(),
+    redirectUri: z.string().url(),
+    companyDomain: z.string().min(1).optional(),
+    allowedDomains: z.array(z.string().min(1)),
+    tokenStorePath: z.string().min(1),
+    tokenStoreKey: z.string().optional(),
+    scopes: z.array(z.string().min(1)),
+    authorizeUrl: z.string().url(),
+    tokenUrl: z.string().url()
   })
 });
 
@@ -46,6 +58,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       tokenStorePath: env.MICROSOFT_TOKEN_STORE_PATH ?? "./data/microsoft-tokens.json",
       tokenStoreKey: optionalString(env.MICROSOFT_TOKEN_STORE_KEY),
       scopes: splitScopes(env.MICROSOFT_SCOPES ?? "offline_access User.Read Mail.Read Calendars.Read")
+    },
+    pipedrive: {
+      clientId: optionalString(env.PIPEDRIVE_CLIENT_ID),
+      clientSecret: optionalString(env.PIPEDRIVE_CLIENT_SECRET),
+      redirectUri: env.PIPEDRIVE_REDIRECT_URI ?? new URL("/auth/pipedrive/callback", apiBaseUrl).toString(),
+      companyDomain: optionalString(env.PIPEDRIVE_COMPANY_DOMAIN),
+      allowedDomains: splitCsv(env.PIPEDRIVE_ALLOWED_DOMAINS ?? allowedEmailDomains.join(",")),
+      tokenStorePath: env.PIPEDRIVE_TOKEN_STORE_PATH ?? "./data/pipedrive-tokens.json",
+      tokenStoreKey: optionalString(env.PIPEDRIVE_TOKEN_STORE_KEY),
+      scopes: splitScopes(env.PIPEDRIVE_SCOPES ?? ""),
+      authorizeUrl: env.PIPEDRIVE_AUTHORIZE_URL ?? "https://oauth.pipedrive.com/oauth/authorize",
+      tokenUrl: env.PIPEDRIVE_TOKEN_URL ?? "https://oauth.pipedrive.com/oauth/token"
     }
   });
 }

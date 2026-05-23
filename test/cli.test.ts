@@ -135,6 +135,18 @@ describe("buildCli", () => {
           tokenStorePath: "./microsoft-tokens.json",
           tokenStoreKey: undefined,
           scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+        },
+        pipedrive: {
+          clientId: undefined,
+          clientSecret: undefined,
+          redirectUri: "https://injected.example.com/auth/pipedrive/callback",
+          companyDomain: undefined,
+          allowedDomains: ["injected.example.com"],
+          tokenStorePath: "./pipedrive-tokens.json",
+          tokenStoreKey: undefined,
+          scopes: [],
+          authorizeUrl: "https://oauth.pipedrive.com/oauth/authorize",
+          tokenUrl: "https://oauth.pipedrive.com/oauth/token"
         }
       })
     });

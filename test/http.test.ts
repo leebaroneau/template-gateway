@@ -29,6 +29,15 @@ describe("HTTP app", () => {
         mcpPath: "/mcp/microsoft",
         scopesSummary: "Delegated Microsoft Graph access for the connected Microsoft login.",
         url: "http://localhost:3000/mcp/microsoft"
+      },
+      {
+        slug: "pipedrive",
+        name: "Pipedrive CRM",
+        description: "Pipedrive CRM access for deals, persons, organizations, and activities.",
+        auth: "oauth",
+        mcpPath: "/mcp/pipedrive",
+        scopesSummary: "Delegated Pipedrive access for the connected Pipedrive user.",
+        url: "http://localhost:3000/mcp/pipedrive"
       }
     ]);
   });
@@ -168,7 +177,7 @@ function baseConfig() {
     tokenStorePath: "./data/tokens.json",
     auditLogPath: "./data/audit.jsonl",
     apiBearerTokens: [],
-    enabledProviders: ["microsoft"],
+    enabledProviders: ["microsoft", "pipedrive"],
     microsoft: {
       clientId: undefined,
       clientSecret: undefined,
@@ -179,6 +188,18 @@ function baseConfig() {
       tokenStorePath: "./data/microsoft-tokens.json",
       tokenStoreKey: undefined,
       scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+    },
+    pipedrive: {
+      clientId: undefined,
+      clientSecret: undefined,
+      redirectUri: "http://localhost:3000/auth/pipedrive/callback",
+      companyDomain: undefined,
+      allowedDomains: ["example.com"],
+      tokenStorePath: "./data/pipedrive-tokens.json",
+      tokenStoreKey: undefined,
+      scopes: [],
+      authorizeUrl: "https://oauth.pipedrive.com/oauth/authorize",
+      tokenUrl: "https://oauth.pipedrive.com/oauth/token"
     }
   };
 }
