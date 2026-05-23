@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { SessionTokenStore, type StaticServiceToken } from "./auth/session-tokens.js";
 import { loadConfig as loadGatewayConfig, type GatewayConfig } from "./config.js";
+import { providersFromConfig } from "./providers/defaults.js";
+import { createMicrosoftProviderService } from "./providers/microsoft/factory.js";
+import type { MicrosoftProviderService } from "./providers/microsoft/service.js";
 import { createProviderRegistry } from "./providers/registry.js";
 import type { GatewayProviderDefinition, ProviderRegistry } from "./providers/types.js";
 
@@ -15,6 +18,7 @@ export interface CliOptions extends CliIo {
   loadConfig?: () => GatewayConfig;
   providers?: GatewayProviderDefinition[] | ProviderRegistry;
   sessionStore?: SessionLister;
+  microsoftProvider?: Pick<MicrosoftProviderService, "createConnectUrl" | "status">;
 }
 
 interface SessionLister {
@@ -42,7 +46,7 @@ export function buildCli(options: CliOptions = { write: (line) => console.log(li
   });
 
   program.command("providers").description("List configured providers").action(() => {
-    const registry = getProviderRegistry(options.providers);
+    const registry = getProviderRegistry(options.providers, readConfig(loadConfig, writeError));
     const providers = registry.list();
     if (providers.length === 0) {
       options.write("No providers configured");
@@ -65,6 +69,35 @@ export function buildCli(options: CliOptions = { write: (line) => console.log(li
     }
   });
 
+  const microsoft = program.command("microsoft").description("Manage Microsoft 365 provider connections");
+
+  microsoft.command("connect")
+    .description("Print a Microsoft OAuth login URL for an actor")
+    .requiredOption("--actor <email>", "Actor email address")
+    .option("--actor-id <id>", "Stable actor id or profile")
+    .option("--actor-name <name>", "Display actor name")
+    .action(async (commandOptions: { actor: string; actorId?: string; actorName?: string }) => {
+      const provider = options.microsoftProvider ?? createMicrosoftProviderService(readConfig(loadConfig, writeError));
+      const result = await provider.createConnectUrl({
+        actorId: commandOptions.actorId,
+        actorEmail: commandOptions.actor,
+        actorName: commandOptions.actorName
+      });
+      options.write(result.authorizeUrl);
+    });
+
+  microsoft.command("status")
+    .description("Print Microsoft connection status for an actor")
+    .requiredOption("--actor <id-or-email>", "Actor id, profile, or email")
+    .action(async (commandOptions: { actor: string }) => {
+      const provider = options.microsoftProvider ?? createMicrosoftProviderService(readConfig(loadConfig, writeError));
+      const status = await provider.status(commandOptions.actor);
+      const upstream = status.upstreamLogin ? ` -> ${status.upstreamLogin}` : "";
+      const scopes = status.scopes.length > 0 ? ` [${status.scopes.join(",")}]` : " []";
+      const expires = status.expiresAt ? ` expires ${status.expiresAt}` : "";
+      options.write(`microsoft: ${status.status} ${status.actorId}${upstream}${scopes}${expires}`);
+    });
+
   return program;
 }
 
@@ -78,9 +111,9 @@ function readConfig(loadConfig: () => GatewayConfig, writeError: (line: string) 
   }
 }
 
-function getProviderRegistry(providers: CliOptions["providers"]): ProviderRegistry {
+function getProviderRegistry(providers: CliOptions["providers"], config: GatewayConfig): ProviderRegistry {
   if (!providers) {
-    return createProviderRegistry([]);
+    return createProviderRegistry(providersFromConfig(config));
   }
   if (Array.isArray(providers)) {
     return createProviderRegistry(providers);

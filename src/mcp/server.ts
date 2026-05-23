@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createProviderDirectory } from "../providers/directory.js";
+import type { MicrosoftProviderService } from "../providers/microsoft/service.js";
 import type { ProviderRegistry } from "../providers/types.js";
 
 interface ToolCapableServer {
@@ -14,6 +15,7 @@ interface ToolCapableServer {
 export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
+  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools">;
 }
 
 export function createGatewayMcpServer<T extends ToolCapableServer>(
@@ -46,6 +48,31 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
     async () => toolResult(createProviderDirectory(options.apiBaseUrl, options.providers))
   );
 
+  if (options.microsoftProvider) {
+    server.tool(
+      "microsoft_status",
+      "Return Microsoft 365 connection status for the authenticated gateway actor.",
+      {},
+      async (_input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) {
+          throw new Error("Missing authenticated gateway actor for Microsoft status");
+        }
+        return toolResult(await options.microsoftProvider!.status(actor));
+      }
+    );
+
+    server.tool(
+      "microsoft_list_tools",
+      "List Microsoft 365 tools enabled for this gateway deployment.",
+      {},
+      async () => toolResult({
+        provider: "microsoft",
+        tools: options.microsoftProvider!.listTools()
+      })
+    );
+  }
+
   return server;
 }
 
@@ -54,4 +81,11 @@ function toolResult(data: unknown) {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
     structuredContent: data
   };
+}
+
+function actorKeyFromExtra(extra: any): string | undefined {
+  const identity = extra?.authInfo?.extra;
+  if (typeof identity?.profile === "string" && identity.profile.trim()) return identity.profile.trim();
+  if (typeof identity?.email === "string" && identity.email.trim()) return identity.email.trim().toLowerCase();
+  return undefined;
 }

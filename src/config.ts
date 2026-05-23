@@ -6,19 +6,47 @@ const configSchema = z.object({
   allowedEmailDomains: z.array(z.string().min(1)),
   tokenStorePath: z.string().min(1),
   auditLogPath: z.string().min(1),
-  apiBearerTokens: z.array(z.string().min(32))
+  apiBearerTokens: z.array(z.string().min(32)),
+  enabledProviders: z.array(z.string().min(1)),
+  microsoft: z.object({
+    clientId: z.string().min(1).optional(),
+    clientSecret: z.string().min(1).optional(),
+    tenantId: z.string().min(1).optional(),
+    redirectUri: z.string().url(),
+    allowedTenants: z.array(z.string().min(1)),
+    allowedDomains: z.array(z.string().min(1)),
+    tokenStorePath: z.string().min(1),
+    tokenStoreKey: z.string().optional(),
+    scopes: z.array(z.string().min(1))
+  })
 });
 
 export type GatewayConfig = z.infer<typeof configSchema>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
+  const apiBaseUrl = env.API_BASE_URL ?? "http://localhost:3000";
+  const allowedEmailDomains = splitCsv(env.ALLOWED_EMAIL_DOMAINS ?? "example.com");
+  const microsoftTenantId = optionalString(env.MICROSOFT_TENANT_ID);
+
   return configSchema.parse({
     port: parseInteger(env.PORT, 3000),
-    apiBaseUrl: env.API_BASE_URL ?? "http://localhost:3000",
-    allowedEmailDomains: splitCsv(env.ALLOWED_EMAIL_DOMAINS ?? "example.com"),
+    apiBaseUrl,
+    allowedEmailDomains,
     tokenStorePath: env.TOKEN_STORE_PATH ?? "./data/tokens.json",
     auditLogPath: env.AUDIT_LOG_PATH ?? "./data/audit.jsonl",
-    apiBearerTokens: splitCsv(env.API_BEARER_TOKENS ?? "")
+    apiBearerTokens: splitCsv(env.API_BEARER_TOKENS ?? ""),
+    enabledProviders: splitCsv(env.ENABLED_PROVIDERS ?? "microsoft"),
+    microsoft: {
+      clientId: optionalString(env.MICROSOFT_CLIENT_ID),
+      clientSecret: optionalString(env.MICROSOFT_CLIENT_SECRET),
+      tenantId: microsoftTenantId,
+      redirectUri: env.MICROSOFT_REDIRECT_URI ?? new URL("/auth/microsoft/callback", apiBaseUrl).toString(),
+      allowedTenants: splitCsv(env.MICROSOFT_ALLOWED_TENANTS ?? microsoftTenantId ?? ""),
+      allowedDomains: splitCsv(env.MICROSOFT_ALLOWED_DOMAINS ?? allowedEmailDomains.join(",")),
+      tokenStorePath: env.MICROSOFT_TOKEN_STORE_PATH ?? "./data/microsoft-tokens.json",
+      tokenStoreKey: optionalString(env.MICROSOFT_TOKEN_STORE_KEY),
+      scopes: splitScopes(env.MICROSOFT_SCOPES ?? "offline_access User.Read Mail.Read Calendars.Read")
+    }
   });
 }
 
@@ -35,4 +63,16 @@ function splitCsv(value: string): string[] {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function splitScopes(value: string): string[] {
+  return value
+    .split(/[,\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function optionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }

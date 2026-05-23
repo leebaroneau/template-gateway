@@ -18,7 +18,7 @@ describe("buildCli", () => {
     const output: string[] = [];
     const cli = buildCli({ write: (line) => output.push(line) });
     await cli.parseAsync(["node", "gateway", "providers"], { from: "node" });
-    expect(output.join("\n")).toContain("No providers configured");
+    expect(output).toEqual(["microsoft: Microsoft 365 (/mcp/microsoft)"]);
   });
 
   it("prints injected provider output", async () => {
@@ -77,6 +77,40 @@ describe("buildCli", () => {
     expect(output).toEqual(["lee@genvest.com.au: claude [mcp:tools,providers:read] 2026-05-23T00:00:00.000Z"]);
   });
 
+  it("prints Microsoft connect and status output without token material", async () => {
+    const output: string[] = [];
+    const cli = buildCli({
+      write: (line) => output.push(line),
+      microsoftProvider: {
+        createConnectUrl: async () => ({
+          provider: "microsoft",
+          authorizeUrl: "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?state=state-1",
+          actor: { actorId: "genvest-head-of-sales", actorEmail: "bot@genvest.com.au" },
+          expiresAt: "2026-05-23T01:00:00.000Z"
+        }),
+        status: async () => ({
+          provider: "microsoft",
+          status: "connected",
+          actorId: "genvest-head-of-sales",
+          actorEmail: "bot@genvest.com.au",
+          upstreamLogin: "bot@genvest.com.au",
+          scopes: ["User.Read", "Mail.Read"],
+          expiresAt: "2026-05-23T02:00:00.000Z"
+        })
+      }
+    });
+
+    await cli.parseAsync(["node", "gateway", "microsoft", "connect", "--actor", "bot@genvest.com.au", "--actor-id", "genvest-head-of-sales"], { from: "node" });
+    await cli.parseAsync(["node", "gateway", "microsoft", "status", "--actor", "genvest-head-of-sales"], { from: "node" });
+
+    expect(output).toEqual([
+      "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?state=state-1",
+      "microsoft: connected genvest-head-of-sales -> bot@genvest.com.au [User.Read,Mail.Read] expires 2026-05-23T02:00:00.000Z"
+    ]);
+    expect(output.join("\n")).not.toContain("access");
+    expect(output.join("\n")).not.toContain("refresh");
+  });
+
   it("prints doctor output from injected config", async () => {
     const output: string[] = [];
     const originalApiBaseUrl = process.env.API_BASE_URL;
@@ -89,7 +123,19 @@ describe("buildCli", () => {
         allowedEmailDomains: ["injected.example.com"],
         tokenStorePath: "./tokens.json",
         auditLogPath: "./audit.jsonl",
-        apiBearerTokens: []
+        apiBearerTokens: [],
+        enabledProviders: ["microsoft"],
+        microsoft: {
+          clientId: undefined,
+          clientSecret: undefined,
+          tenantId: undefined,
+          redirectUri: "https://injected.example.com/auth/microsoft/callback",
+          allowedTenants: [],
+          allowedDomains: ["injected.example.com"],
+          tokenStorePath: "./microsoft-tokens.json",
+          tokenStoreKey: undefined,
+          scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+        }
       })
     });
 
