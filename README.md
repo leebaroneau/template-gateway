@@ -34,7 +34,9 @@ Coolify should use the Dockerfile build pack. No runtime start-command override 
 
 ## Client Wrappers
 
-Client deployments should use thin wrapper repos instead of editing this template directly. See `docs/client-wrapper-contract.md`.
+Client deployments should use thin wrapper repos instead of editing this template directly. See [Client Wrapper Contract](docs/client-wrapper-contract.md).
+
+For the Genvest migration guardrails, see [Genvest Migration Notes](docs/genvest-migration-notes.md).
 
 Recommended names:
 
