@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { access, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -9,8 +9,11 @@ describe("SessionTokenStore", () => {
     const store = new SessionTokenStore(join(await tmp(), "tokens.json"), ["genvest.com.au"], []);
     const issued = await store.issue("Lee@Genvest.com.au", "claude", ["mcp:tools"]);
     const auth = await store.verifyAccessToken(issued.access_token);
+    const extra = auth.extra;
 
-    expect(auth.extra.email).toBe("lee@genvest.com.au");
+    expect(extra).toBeDefined();
+    if (!extra) throw new Error("Expected auth extra.");
+    expect(extra.email).toBe("lee@genvest.com.au");
     expect(auth.scopes).toEqual(["mcp:tools"]);
   });
 
@@ -21,7 +24,8 @@ describe("SessionTokenStore", () => {
 
   it("verifies static service tokens without storing them", async () => {
     const token = "abcdefghijklmnopqrstuvwxyz123456";
-    const store = new SessionTokenStore(join(await tmp(), "tokens.json"), ["genvest.com.au"], [
+    const path = join(await tmp(), "tokens.json");
+    const store = new SessionTokenStore(path, ["genvest.com.au"], [
       { token, email: "bot@genvest.com.au", name: "@bot", profile: "genvest-bot" }
     ]);
 
@@ -32,6 +36,7 @@ describe("SessionTokenStore", () => {
       profile: "genvest-bot",
       isStaticServiceToken: true
     });
+    await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
