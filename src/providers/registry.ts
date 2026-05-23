@@ -10,6 +10,9 @@ export function createProviderRegistry(
 
   return {
     list: () => normalized.map((provider) => ({ ...provider })),
-    get: (slug: string) => bySlug.get(slug.trim().toLowerCase())
+    get: (slug: string) => {
+      const provider = bySlug.get(slug.trim().toLowerCase());
+      return provider ? { ...provider } : undefined;
+    }
   };
 }

@@ -45,4 +45,24 @@ describe("provider registry", () => {
     expect(registry.get("microsoft")?.name).toBe("Microsoft 365");
     expect(registry.list()[0]?.name).toBe("Microsoft 365");
   });
+
+  it("returns provider copies from get", () => {
+    const registry = createProviderRegistry([
+      {
+        slug: "microsoft",
+        name: "Microsoft 365",
+        description: "Outlook, Calendar, OneDrive",
+        auth: "oauth",
+        mcpPath: "/mcp/microsoft",
+        scopesSummary: "Read and write Microsoft 365 data."
+      }
+    ]);
+
+    const provider = registry.get("microsoft");
+    expect(provider).toBeDefined();
+    provider!.name = "Mutated";
+
+    expect(registry.get("microsoft")?.name).toBe("Microsoft 365");
+    expect(registry.list()[0]?.name).toBe("Microsoft 365");
+  });
 });
