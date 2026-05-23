@@ -6,6 +6,8 @@ import { loadConfig as loadGatewayConfig, type GatewayConfig } from "./config.js
 import { providersFromConfig } from "./providers/defaults.js";
 import { createMicrosoftProviderService } from "./providers/microsoft/factory.js";
 import type { MicrosoftProviderService } from "./providers/microsoft/service.js";
+import { createPipedriveProviderService } from "./providers/pipedrive/factory.js";
+import type { PipedriveProviderService } from "./providers/pipedrive/service.js";
 import { createProviderRegistry } from "./providers/registry.js";
 import type { GatewayProviderDefinition, ProviderRegistry } from "./providers/types.js";
 
@@ -19,6 +21,7 @@ export interface CliOptions extends CliIo {
   providers?: GatewayProviderDefinition[] | ProviderRegistry;
   sessionStore?: SessionLister;
   microsoftProvider?: Pick<MicrosoftProviderService, "createConnectUrl" | "status">;
+  pipedriveProvider?: Pick<PipedriveProviderService, "createConnectUrl" | "status">;
 }
 
 interface SessionLister {
@@ -96,6 +99,36 @@ export function buildCli(options: CliOptions = { write: (line) => console.log(li
       const scopes = status.scopes.length > 0 ? ` [${status.scopes.join(",")}]` : " []";
       const expires = status.expiresAt ? ` expires ${status.expiresAt}` : "";
       options.write(`microsoft: ${status.status} ${status.actorId}${upstream}${scopes}${expires}`);
+    });
+
+  const pipedrive = program.command("pipedrive").description("Manage Pipedrive provider connections");
+
+  pipedrive.command("connect")
+    .description("Print a Pipedrive OAuth login URL for an actor")
+    .requiredOption("--actor <email>", "Actor email address")
+    .option("--actor-id <id>", "Stable actor id or profile")
+    .option("--actor-name <name>", "Display actor name")
+    .action(async (commandOptions: { actor: string; actorId?: string; actorName?: string }) => {
+      const provider = options.pipedriveProvider ?? createPipedriveProviderService(readConfig(loadConfig, writeError));
+      const result = await provider.createConnectUrl({
+        actorId: commandOptions.actorId,
+        actorEmail: commandOptions.actor,
+        actorName: commandOptions.actorName
+      });
+      options.write(result.authorizeUrl);
+    });
+
+  pipedrive.command("status")
+    .description("Print Pipedrive connection status for an actor")
+    .requiredOption("--actor <id-or-email>", "Actor id, profile, or email")
+    .action(async (commandOptions: { actor: string }) => {
+      const provider = options.pipedriveProvider ?? createPipedriveProviderService(readConfig(loadConfig, writeError));
+      const status = await provider.status(commandOptions.actor);
+      const upstream = status.upstreamLogin ? ` -> ${status.upstreamLogin}` : "";
+      const apiDomain = status.apiDomain ? ` (${status.apiDomain})` : "";
+      const scopes = status.scopes.length > 0 ? ` [${status.scopes.join(",")}]` : " []";
+      const expires = status.expiresAt ? ` expires ${status.expiresAt}` : "";
+      options.write(`pipedrive: ${status.status} ${status.actorId}${upstream}${apiDomain}${scopes}${expires}`);
     });
 
   return program;

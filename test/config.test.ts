@@ -21,7 +21,47 @@ describe("loadConfig", () => {
         tokenStorePath: "./data/microsoft-tokens.json",
         tokenStoreKey: undefined,
         scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+      },
+      pipedrive: {
+        clientId: undefined,
+        clientSecret: undefined,
+        redirectUri: "http://localhost:3000/auth/pipedrive/callback",
+        companyDomain: undefined,
+        allowedDomains: ["example.com"],
+        tokenStorePath: "./data/pipedrive-tokens.json",
+        tokenStoreKey: undefined,
+        scopes: [],
+        authorizeUrl: "https://oauth.pipedrive.com/oauth/authorize",
+        tokenUrl: "https://oauth.pipedrive.com/oauth/token"
       }
+    });
+  });
+
+  it("parses Pipedrive environment variables", () => {
+    const config = loadConfig({
+      API_BASE_URL: "https://gateway.example.com",
+      ALLOWED_EMAIL_DOMAINS: "genvest.com.au",
+      PIPEDRIVE_CLIENT_ID: "pd-client",
+      PIPEDRIVE_CLIENT_SECRET: "pd-secret",
+      PIPEDRIVE_REDIRECT_URI: "https://gateway.example.com/auth/pipedrive/callback",
+      PIPEDRIVE_COMPANY_DOMAIN: "acme",
+      PIPEDRIVE_ALLOWED_DOMAINS: "genvest.com.au",
+      PIPEDRIVE_TOKEN_STORE_PATH: "/data/pipedrive.json",
+      PIPEDRIVE_TOKEN_STORE_KEY: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=",
+      PIPEDRIVE_SCOPES: "deals:read contacts:read"
+    });
+
+    expect(config.pipedrive).toEqual({
+      clientId: "pd-client",
+      clientSecret: "pd-secret",
+      redirectUri: "https://gateway.example.com/auth/pipedrive/callback",
+      companyDomain: "acme",
+      allowedDomains: ["genvest.com.au"],
+      tokenStorePath: "/data/pipedrive.json",
+      tokenStoreKey: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=",
+      scopes: ["deals:read", "contacts:read"],
+      authorizeUrl: "https://oauth.pipedrive.com/oauth/authorize",
+      tokenUrl: "https://oauth.pipedrive.com/oauth/token"
     });
   });
 
