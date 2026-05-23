@@ -24,8 +24,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
 
 function parseInteger(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Expected decimal integer value, received: ${value}`);
+  }
+  return Number.parseInt(value, 10);
 }
 
 function splitCsv(value: string): string[] {

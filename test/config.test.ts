@@ -27,4 +27,10 @@ describe("loadConfig", () => {
     expect(config.allowedEmailDomains).toEqual(["genvest.com.au", "haverford.au"]);
     expect(config.apiBearerTokens).toHaveLength(2);
   });
+
+  it("rejects malformed port values", () => {
+    expect(() => loadConfig({ PORT: "3000abc" })).toThrow();
+    expect(() => loadConfig({ PORT: "1.5" })).toThrow();
+    expect(() => loadConfig({ PORT: "abc" })).toThrow();
+  });
 });
