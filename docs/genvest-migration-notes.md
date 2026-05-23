@@ -6,7 +6,10 @@ Use that repo's README section `Authentication: Static Service Tokens (Hermes Bo
 ## Protected Migration Checklist
 
 - [ ] Preserve profile-bound `API_BEARER_TOKENS`: each static token remains a `token:email:profile` binding, not a bearer token with global write rights.
-- [ ] Preserve `HERMES_PROFILES_JSON` cross-validation: startup must fail when a bearer token references a missing profile or mismatched actor email.
+- [ ] Preserve `API_BEARER_TOKENS` validation: tokens must keep the length, `[A-Za-z0-9_-]` charset, and allowed-domain checks.
+- [ ] Preserve `HERMES_PROFILES_JSON` cross-validation: startup must fail when a bearer token references a missing profile.
+- [ ] Preserve verify-time actor binding: `SessionTokenStore.verifyAccessToken` must reject a static token whose email does not match the profile `actorEmail`.
+- [ ] Preserve constant-time static-token checks: keep length-padded `timingSafeEqual` semantics and do not short-circuit on token length before comparing.
 - [ ] Preserve per-request scope plumbing: profile scope must flow from auth metadata into each guarded request instead of falling back to global config.
 - [ ] Preserve no shared fallback for writes: shared Pipedrive API tokens may support legacy reads, but every write must require the caller's connected OAuth token.
 - [ ] Preserve pipeline body/stage checks: scoped deal updates must validate the deal's current pipeline, requested `pipeline_id` / `pipelineId`, and requested `stage_id`.
