@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createProviderDirectory } from "../providers/directory.js";
 import type { ProviderRegistry } from "../providers/types.js";
 
 interface ToolCapableServer {
@@ -23,26 +24,26 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
     "gateway_whoami",
     "Return the authenticated gateway actor identity for this MCP session.",
     {},
-    async (_input, extra) =>
-      toolResult({
-        email: extra?.authInfo?.extra?.email,
-        name: extra?.authInfo?.extra?.name,
-        profile: extra?.authInfo?.extra?.profile,
-        isStaticServiceToken: extra?.authInfo?.extra?.isStaticServiceToken === true
-      })
+    async (_input, extra) => {
+      const identity = extra?.authInfo?.extra;
+      if (!identity?.email) {
+        throw new Error("Missing authenticated gateway actor email");
+      }
+
+      return toolResult({
+        email: identity.email,
+        name: identity.name,
+        profile: identity.profile,
+        isStaticServiceToken: identity.isStaticServiceToken === true
+      });
+    }
   );
 
   server.tool(
     "gateway_list_providers",
     "List providers available from this gateway.",
     {},
-    async () =>
-      toolResult({
-        providers: options.providers.list().map((provider) => ({
-          ...provider,
-          url: new URL(provider.mcpPath, options.apiBaseUrl).toString()
-        }))
-      })
+    async () => toolResult(createProviderDirectory(options.apiBaseUrl, options.providers))
   );
 
   return server;
@@ -51,6 +52,6 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
 function toolResult(data: unknown) {
   return {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-    structuredContent: { data }
+    structuredContent: data
   };
 }

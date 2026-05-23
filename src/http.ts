@@ -1,7 +1,8 @@
 import express, { type Express } from "express";
 import type { GatewayConfig } from "./config.js";
+import { createProviderDirectory } from "./providers/directory.js";
 import { createProviderRegistry } from "./providers/registry.js";
-import type { GatewayProviderDefinition, ProviderRegistry } from "./providers/types.js";
+import type { GatewayProviderDefinition } from "./providers/types.js";
 
 export interface HttpAppOptions {
   config: GatewayConfig;
@@ -19,21 +20,12 @@ export function createHttpApp(options: HttpAppOptions): Express {
   });
 
   app.get("/providers", (_request, response) => {
-    response.json(toProviderDirectory(options.config.apiBaseUrl, providers));
+    response.json(createProviderDirectory(options.config.apiBaseUrl, providers));
   });
 
   app.get("/mcp", (_request, response) => {
-    response.json(toProviderDirectory(options.config.apiBaseUrl, providers));
+    response.json(createProviderDirectory(options.config.apiBaseUrl, providers));
   });
 
   return app;
-}
-
-function toProviderDirectory(apiBaseUrl: string, providers: ProviderRegistry) {
-  return {
-    providers: providers.list().map((provider) => ({
-      ...provider,
-      url: new URL(provider.mcpPath, apiBaseUrl).toString()
-    }))
-  };
 }
