@@ -23,7 +23,26 @@ describe("provider registry", () => {
     ]);
 
     expect(registry.list().map((provider) => provider.slug)).toEqual(["microsoft", "pipedrive"]);
-    expect(registry.get("microsoft")?.name).toBe("Microsoft 365");
+    expect(registry.get(" Microsoft ")?.name).toBe("Microsoft 365");
     expect(registry.get("missing")).toBeUndefined();
+  });
+
+  it("returns provider copies from list", () => {
+    const registry = createProviderRegistry([
+      {
+        slug: "microsoft",
+        name: "Microsoft 365",
+        description: "Outlook, Calendar, OneDrive",
+        auth: "oauth",
+        mcpPath: "/mcp/microsoft",
+        scopesSummary: "Read and write Microsoft 365 data."
+      }
+    ]);
+
+    const [provider] = registry.list();
+    provider.name = "Mutated";
+
+    expect(registry.get("microsoft")?.name).toBe("Microsoft 365");
+    expect(registry.list()[0]?.name).toBe("Microsoft 365");
   });
 });

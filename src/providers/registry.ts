@@ -9,7 +9,7 @@ export function createProviderRegistry(
   const bySlug = new Map(normalized.map((provider) => [provider.slug, provider]));
 
   return {
-    list: () => [...normalized],
+    list: () => normalized.map((provider) => ({ ...provider })),
     get: (slug: string) => bySlug.get(slug.trim().toLowerCase())
   };
 }
