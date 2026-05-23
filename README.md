@@ -14,13 +14,13 @@ npm run dev
 - `GET /health`
 - `GET /providers`
 - `GET /mcp`
-- `POST /mcp`
 
 ## Operator CLI
 
 ```bash
 npm run cli -- doctor
 npm run cli -- providers
+npm run cli -- sessions
 ```
 
 ## Container Runtime

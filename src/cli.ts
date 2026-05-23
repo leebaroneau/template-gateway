@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { SessionTokenStore, type StaticServiceToken } from "./auth/session-tokens.js";
 import { loadConfig as loadGatewayConfig, type GatewayConfig } from "./config.js";
 import { createProviderRegistry } from "./providers/registry.js";
 import type { GatewayProviderDefinition, ProviderRegistry } from "./providers/types.js";
@@ -13,6 +14,11 @@ export interface CliIo {
 export interface CliOptions extends CliIo {
   loadConfig?: () => GatewayConfig;
   providers?: GatewayProviderDefinition[] | ProviderRegistry;
+  sessionStore?: SessionLister;
+}
+
+interface SessionLister {
+  listSessions(): Promise<Array<{ email: string; clientId: string; scopes: string[]; createdAt: string }>>;
 }
 
 class CliError extends Error {
@@ -47,6 +53,18 @@ export function buildCli(options: CliOptions = { write: (line) => console.log(li
     }
   });
 
+  program.command("sessions").description("List active user sessions").action(async () => {
+    const store = options.sessionStore ?? createDefaultSessionStore(readConfig(loadConfig, writeError));
+    const sessions = await store.listSessions();
+    if (sessions.length === 0) {
+      options.write("No sessions");
+      return;
+    }
+    for (const session of sessions) {
+      options.write(`${session.email}: ${session.clientId} [${session.scopes.join(",")}] ${session.createdAt}`);
+    }
+  });
+
   return program;
 }
 
@@ -68,6 +86,22 @@ function getProviderRegistry(providers: CliOptions["providers"]): ProviderRegist
     return createProviderRegistry(providers);
   }
   return providers;
+}
+
+function createDefaultSessionStore(config: GatewayConfig): SessionTokenStore {
+  return new SessionTokenStore(config.tokenStorePath, config.allowedEmailDomains, staticServiceTokensFromConfig(config));
+}
+
+function staticServiceTokensFromConfig(config: GatewayConfig): StaticServiceToken[] {
+  const fallbackEmail = `service-token@${config.allowedEmailDomains[0] ?? "example.com"}`;
+  return config.apiBearerTokens.map((binding) => {
+    const [token, email, profile] = binding.split(":");
+    return {
+      token,
+      email: email || fallbackEmail,
+      profile: profile || undefined
+    };
+  });
 }
 
 function errorMessage(error: unknown): string {

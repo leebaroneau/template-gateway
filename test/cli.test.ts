@@ -42,6 +42,41 @@ describe("buildCli", () => {
     expect(output).toEqual(["microsoft: Microsoft 365 (/mcp/microsoft)"]);
   });
 
+  it("prints empty sessions output", async () => {
+    const output: string[] = [];
+    const cli = buildCli({
+      write: (line) => output.push(line),
+      sessionStore: {
+        listSessions: async () => []
+      }
+    });
+
+    await cli.parseAsync(["node", "gateway", "sessions"], { from: "node" });
+
+    expect(output).toEqual(["No sessions"]);
+  });
+
+  it("prints listed sessions output", async () => {
+    const output: string[] = [];
+    const cli = buildCli({
+      write: (line) => output.push(line),
+      sessionStore: {
+        listSessions: async () => [
+          {
+            email: "lee@genvest.com.au",
+            clientId: "claude",
+            scopes: ["mcp:tools", "providers:read"],
+            createdAt: "2026-05-23T00:00:00.000Z"
+          }
+        ]
+      }
+    });
+
+    await cli.parseAsync(["node", "gateway", "sessions"], { from: "node" });
+
+    expect(output).toEqual(["lee@genvest.com.au: claude [mcp:tools,providers:read] 2026-05-23T00:00:00.000Z"]);
+  });
+
   it("prints doctor output from injected config", async () => {
     const output: string[] = [];
     const originalApiBaseUrl = process.env.API_BASE_URL;
