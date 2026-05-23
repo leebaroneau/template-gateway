@@ -19,4 +19,4 @@ Use that repo's README section `Authentication: Static Service Tokens (Hermes Bo
 - [ ] Keep `/mcp` aliasing behavior until Hermes profiles move to provider-specific URLs.
 - [ ] Migrate in a new branch and issue inside the Genvest repo because it has Pipeline Core governance.
 
-The first Genvest wrapper should be named `genvest-gateway` unless Lee keeps `service-api` for continuity.
+The first Genvest wrapper should be named `gateway-genvest` unless Lee keeps `service-api` for continuity. Use the `gateway-<client>` naming pattern for every client wrapper so all gateway repos sort together.

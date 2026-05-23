@@ -42,6 +42,6 @@ For the Genvest migration guardrails, see [Genvest Migration Notes](docs/genvest
 
 Recommended names:
 
-- `genvest-gateway`
-- `haverford-gateway`
-- `alx-gateway`
+- `gateway-genvest`
+- `gateway-haverford`
+- `gateway-alx`
