@@ -22,3 +22,12 @@ npm run dev
 npm run cli -- doctor
 npm run cli -- providers
 ```
+
+## Container Runtime
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Coolify should use the Dockerfile build pack. No runtime start-command override is required.
