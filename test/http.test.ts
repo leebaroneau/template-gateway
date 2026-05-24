@@ -28,6 +28,7 @@ describe("HTTP app", () => {
         auth: "oauth",
         mcpPath: "/mcp/microsoft",
         scopesSummary: "Delegated Microsoft Graph access for the connected Microsoft login.",
+        backend: "native",
         url: "http://localhost:3000/mcp/microsoft"
       },
       {
@@ -37,6 +38,7 @@ describe("HTTP app", () => {
         auth: "oauth",
         mcpPath: "/mcp/pipedrive",
         scopesSummary: "Delegated Pipedrive access for the connected Pipedrive user.",
+        backend: "native",
         url: "http://localhost:3000/mcp/pipedrive"
       }
     ]);

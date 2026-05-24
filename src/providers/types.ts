@@ -1,5 +1,7 @@
 export type ProviderAuthMode = "none" | "oauth" | "static-service-token";
 
+export type ProviderBackend = "composio" | "native";
+
 export interface GatewayProviderDefinition {
   slug: string;
   name: string;
@@ -7,6 +9,7 @@ export interface GatewayProviderDefinition {
   auth: ProviderAuthMode;
   mcpPath: string;
   scopesSummary: string;
+  backend?: ProviderBackend;
 }
 
 export interface ProviderRegistry {
