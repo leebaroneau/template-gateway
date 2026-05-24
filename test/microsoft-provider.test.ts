@@ -441,6 +441,47 @@ describe("MicrosoftProviderService.listEvents", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// graphRequest tests
+// ---------------------------------------------------------------------------
+
+describe("MicrosoftProviderService.graphRequest", () => {
+  it("proxies allowlisted GET path with User.Read", async () => {
+    const fetchImpl = (async (url: string) => {
+      if (url === "https://graph.microsoft.com/v1.0/me/messages/AAA") {
+        return new Response(JSON.stringify({ id: "AAA", subject: "Hi" }), { status: 200 });
+      }
+      throw new Error(`Unexpected: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 }, fetchImpl);
+    const result = await ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me/messages/AAA" });
+    expect((result.body as { id: string }).id).toBe("AAA");
+    expect(result.status).toBe(200);
+    ctx.cleanup();
+  });
+
+  it("rejects non-GET methods", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(ctx.service.graphRequest("bot@example.com", { method: "POST" as any, path: "/me" }))
+      .rejects.toThrow(/method.*not allowed|GET only/i);
+    ctx.cleanup();
+  });
+
+  it("rejects non-allowlisted paths", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/users" }))
+      .rejects.toThrow(/path.*not allowed/i);
+    ctx.cleanup();
+  });
+
+  it("rejects paths that escape the allowlist via /..", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me/../users" }))
+      .rejects.toThrow(/path.*not allowed|invalid path/i);
+    ctx.cleanup();
+  });
+});
+
 function jsonResponse(body: unknown): Response {
   return {
     ok: true,

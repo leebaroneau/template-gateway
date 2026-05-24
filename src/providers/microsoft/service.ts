@@ -194,6 +194,35 @@ export class MicrosoftProviderService {
     };
   }
 
+  async graphRequest(
+    actorIdOrEmail: string,
+    input: { method: "GET"; path: string }
+  ): Promise<{ status: number; body: unknown }> {
+    if (input.method !== "GET") {
+      throw new Error(`graph_request method not allowed: ${input.method}. GET only.`);
+    }
+    this.assertAllowedGraphPath(input.path);
+    const token = await this.requireValidAccessToken(actorIdOrEmail, "User.Read");
+    const url = `https://graph.microsoft.com/v1.0${input.path}`;
+    const response = await this.fetchImpl(url, {
+      headers: { Authorization: `Bearer ${token.accessToken}` }
+    });
+    const body = await response.json().catch(() => null);
+    return { status: response.status, body };
+  }
+
+  private assertAllowedGraphPath(path: string): void {
+    // Normalize: must start with `/`, no `..`, no backslash, no embedded query.
+    if (!path.startsWith("/") || path.includes("..") || path.includes("\\")) {
+      throw new Error(`graph_request path not allowed (invalid path): ${path}`);
+    }
+    const allowed = this.options.config.graphRequestPathAllowlist;
+    const ok = allowed.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+    if (!ok) {
+      throw new Error(`graph_request path not allowed: ${path}. Allowed prefixes: ${allowed.join(", ")}`);
+    }
+  }
+
   async requireValidAccessToken(actorIdOrEmail: string, requiredScope: string): Promise<ValidAccessToken> {
     const loaded = await this.options.tokenStore.loadBinding(actorIdOrEmail);
     if (!loaded) {

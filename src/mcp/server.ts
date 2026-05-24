@@ -17,7 +17,7 @@ interface ToolCapableServer {
 export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
-  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages" | "listEvents">;
+  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages" | "listEvents" | "graphRequest">;
   enableComposioProviders?: boolean;
   composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
@@ -109,6 +109,20 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
         const actor = actorKeyFromExtra(extra);
         if (!actor) throw new Error("Missing authenticated gateway actor for calendar_list_events");
         return toolResult(await options.microsoftProvider!.listEvents!(actor, input));
+      }
+    );
+
+    server.tool(
+      "graph_request",
+      "Allowlisted Microsoft Graph GET proxy for the authenticated gateway actor. Requires User.Read.",
+      {
+        method: z.literal("GET"),
+        path: z.string().min(1)
+      },
+      async (input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) throw new Error("Missing authenticated gateway actor for graph_request");
+        return toolResult(await options.microsoftProvider!.graphRequest!(actor, input));
       }
     );
   }

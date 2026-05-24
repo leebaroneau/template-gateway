@@ -47,7 +47,8 @@ describe("createGatewayMcpServer", () => {
           { name: "outlook_list_messages", requiredScope: "Mail.Read", readOnly: true }
         ],
         listMessages: async () => ({ messages: [], nextLink: null }),
-        listEvents: async () => ({ events: [], nextLink: null })
+        listEvents: async () => ({ events: [], nextLink: null }),
+        graphRequest: async () => ({ status: 200, body: {} })
       }
     });
 
@@ -57,7 +58,8 @@ describe("createGatewayMcpServer", () => {
       "microsoft_status",
       "microsoft_list_tools",
       "outlook_list_messages",
-      "calendar_list_events"
+      "calendar_list_events",
+      "graph_request"
     ]);
 
     const status = await fakeServer.tools.microsoft_status.handler({}, {
@@ -163,6 +165,24 @@ describe("MCP — calendar_list_events", () => {
       } as any
     });
     expect(server.toolNames()).toContain("calendar_list_events");
+  });
+});
+
+describe("MCP — graph_request", () => {
+  it("is registered when microsoftProvider has graphRequest", () => {
+    const server = createFakeServer();
+    createGatewayMcpServer(server, {
+      providers: createProviderRegistry([]),
+      apiBaseUrl: "http://localhost:3000",
+      microsoftProvider: {
+        status: async () => ({ provider: "microsoft", status: "connected", actorId: "x", scopes: [] }),
+        listTools: () => [],
+        listMessages: async () => ({ messages: [], nextLink: null }),
+        listEvents: async () => ({ events: [], nextLink: null }),
+        graphRequest: async () => ({ status: 200, body: {} })
+      } as any
+    });
+    expect(server.toolNames()).toContain("graph_request");
   });
 });
 
