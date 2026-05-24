@@ -1,0 +1,17 @@
+# Shared (brand-level) Composio toolkit overlay fragment.
+#
+# Rendered by scripts/composio-create-servers.mjs using POSIX envsubst. Variables:
+#   ${TOOLKIT_KEY}    - The Hermes MCP server key, e.g. composio-ga4
+#   ${MCP_BASE_URL}   - Composio base, typically https://backend.composio.dev/v3/mcp
+#   ${SERVER_ID}      - The UUID returned by composio.mcp.create()
+#   ${BRAND_SLUG}     - The brand entity ID, e.g. "genvest" — hardcoded at scaffold time
+#                       so every profile reads the same connection.
+#
+# Runtime substitution by Hermes:
+#   $${COMPOSIO_API_KEY}  - Set per-profile by runtime-seed (same value all profiles)
+
+${TOOLKIT_KEY}:
+  url: ${MCP_BASE_URL}/${SERVER_ID}/mcp?include_composio_helper_actions=true&user_id=${BRAND_SLUG}
+  headers:
+    x-api-key: $${COMPOSIO_API_KEY}
+  timeout: 120

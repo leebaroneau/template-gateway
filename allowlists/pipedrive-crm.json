@@ -1,0 +1,26 @@
+{
+  "toolkit": "pipedrive",
+  "description": "Pipedrive CRM: deals, leads, persons, organizations, activities (read + create + update).",
+  "entity_scope": "per_profile",
+  "notes": "Each profile/bot signs in with its own Pipedrive user (within the brand's CRM workspace).",
+  "tools": [
+    "PIPEDRIVE_GET_CURRENT_USER_DATA",
+    "PIPEDRIVE_GET_ALL_LEADS",
+    "PIPEDRIVE_ADD_LEAD",
+    "PIPEDRIVE_SEARCH_LEADS",
+    "PIPEDRIVE_GET_ALL_DEALS",
+    "PIPEDRIVE_GET_DEAL",
+    "PIPEDRIVE_ADD_A_DEAL",
+    "PIPEDRIVE_UPDATE_DEAL",
+    "PIPEDRIVE_SEARCH_DEALS",
+    "PIPEDRIVE_GET_ALL_PERSONS",
+    "PIPEDRIVE_GET_PERSON",
+    "PIPEDRIVE_ADD_A_PERSON",
+    "PIPEDRIVE_SEARCH_PERSONS",
+    "PIPEDRIVE_GET_ALL_ORGANIZATIONS",
+    "PIPEDRIVE_GET_ORGANIZATION",
+    "PIPEDRIVE_SEARCH_ORGANIZATIONS",
+    "PIPEDRIVE_ADD_AN_ACTIVITY",
+    "PIPEDRIVE_GET_ALL_ACTIVITIES_BETA"
+  ]
+}

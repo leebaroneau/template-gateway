@@ -1,0 +1,18 @@
+{
+  "toolkit": "google_analytics",
+  "description": "GA4 read-only reporting + metadata. No admin (no audience creation, no key event management).",
+  "entity_scope": "shared",
+  "notes": "Single brand-level OAuth covers all profiles. user_id=<brand-slug> hardcoded in overlay URL. Sign-in performed once by the analytics owner (e.g. lee@brand.com).",
+  "tools": [
+    "GOOGLE_ANALYTICS_LIST_ACCOUNT_SUMMARIES",
+    "GOOGLE_ANALYTICS_LIST_PROPERTIES",
+    "GOOGLE_ANALYTICS_GET_PROPERTY",
+    "GOOGLE_ANALYTICS_RUN_REPORT",
+    "GOOGLE_ANALYTICS_RUN_REALTIME_REPORT",
+    "GOOGLE_ANALYTICS_BATCH_RUN_REPORTS",
+    "GOOGLE_ANALYTICS_RUN_PIVOT_REPORT",
+    "GOOGLE_ANALYTICS_LIST_CUSTOM_DIMENSIONS",
+    "GOOGLE_ANALYTICS_LIST_CUSTOM_METRICS",
+    "GOOGLE_ANALYTICS_GET_METADATA"
+  ]
+}

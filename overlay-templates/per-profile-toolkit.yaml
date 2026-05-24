@@ -1,0 +1,16 @@
+# Per-profile Composio toolkit overlay fragment.
+#
+# Rendered by scripts/composio-create-servers.mjs using POSIX envsubst. Variables:
+#   ${TOOLKIT_KEY}    - The Hermes MCP server key, e.g. composio-outlook
+#   ${MCP_BASE_URL}   - Composio base, typically https://backend.composio.dev/v3/mcp
+#   ${SERVER_ID}      - The UUID returned by composio.mcp.create()
+#
+# Runtime substitution by Hermes (NOT by the scaffold script — double-$ preserves):
+#   $${COMPOSIO_USER_ID}  - Set per-profile by runtime-seed (e.g. genvest-head-of-sales)
+#   $${COMPOSIO_API_KEY}  - Set per-profile by runtime-seed (same value all profiles)
+
+${TOOLKIT_KEY}:
+  url: ${MCP_BASE_URL}/${SERVER_ID}/mcp?include_composio_helper_actions=true&user_id=$${COMPOSIO_USER_ID}
+  headers:
+    x-api-key: $${COMPOSIO_API_KEY}
+  timeout: 120

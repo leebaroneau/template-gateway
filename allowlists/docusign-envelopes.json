@@ -1,0 +1,16 @@
+{
+  "toolkit": "docusign",
+  "description": "DocuSign envelopes + templates: send for signature, fetch envelope/template by ID, browse templates and users.",
+  "entity_scope": "per_profile",
+  "notes": "Each profile/bot signs in with its own DocuSign user. DocuSign's API doesn't have a single 'list envelopes' tool — envelopes are typically retrieved by ID, often handed off from another system (e.g. a Pipedrive deal reference). Adjust the allowlist if your use case needs search or batch operations.",
+  "tools": [
+    "DOCUSIGN_GET_ENVELOPE",
+    "DOCUSIGN_CREATE_ENVELOPE_FROM_TEMPLATE",
+    "DOCUSIGN_SEND_ENVELOPE",
+    "DOCUSIGN_GET_TEMPLATE",
+    "DOCUSIGN_LIST_ALL_TEMPLATES",
+    "DOCUSIGN_GET_USER_INFORMATION_BY_ID",
+    "DOCUSIGN_LIST_USERS_FOR_ACCOUNT",
+    "DOCUSIGN_LIST_OAUTH_USERINFO"
+  ]
+}

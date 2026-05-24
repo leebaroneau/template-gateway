@@ -1,0 +1,9 @@
+{
+  "toolkit": "microsoft_clarity",
+  "description": "Microsoft Clarity data export — sessions, engagement, dead-clicks, rage-clicks per dimension.",
+  "entity_scope": "shared",
+  "notes": "API-key auth (not OAuth). The token is a per-project JWT generated in Clarity Settings → Data Export → Generate API Token. user_id=<brand-slug> is moot — the connection is global within the auth config — but kept for symmetry with other shared toolkits.",
+  "tools": [
+    "MICROSOFT_CLARITY_DATA_EXPORT"
+  ]
+}

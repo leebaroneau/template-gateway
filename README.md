@@ -1,96 +1,87 @@
-# Template Gateway
+# template-gateway
 
-Reusable gateway template for client identity, OAuth provider connections, MCP, HTTP API, CLI operations, audit, and policy.
+Reference scaffolding for the per-toolkit Composio MCP pattern. Use it when standing up a new brand's Hermes Agent stack that needs to integrate Outlook, OneDrive, Pipedrive, Teams, Zoom, DocuSign, GA4, GSC, Clarity (or any other Composio toolkit) without blowing the LLM's context window.
 
-## Local Development
+This repo is not a runtime service. It contains scripts, JSON allowlists, overlay templates, and docs. Brands consume it by cloning, running the scaffold script, and pasting the generated overlay fragment into their own deploy repo.
+
+> The previous role of this repo — a native-OAuth MCP/HTTP gateway — was archived 2026-05-24 and removed in this PR. If you need to reference the historical native gateway code (PR #5, full Codex security review), check out commit `fd76a91`: `git show fd76a91:src/index.ts` etc.
+
+## What's in here
+
+```
+template-gateway/
+├── docs/                      walkthroughs + architecture reference
+│   ├── architecture.md
+│   ├── adding-a-brand.md
+│   ├── adding-a-toolkit.md
+│   └── superpowers/specs/     design history
+├── scripts/                   helpers for Composio MCP server setup
+│   ├── composio-list-tools.mjs    probe a toolkit's full catalog
+│   └── composio-create-servers.mjs  create N MCP servers from N allowlists
+├── allowlists/                reference allowlists per toolkit
+│   ├── outlook-mail-calendar.json
+│   ├── onedrive-files.json
+│   ├── pipedrive-crm.json
+│   ├── teams-messaging.json
+│   ├── zoom-meetings.json
+│   ├── docusign-envelopes.json
+│   ├── ga4-reporting.json
+│   ├── gsc-search.json
+│   └── clarity-export.json
+└── overlay-templates/         envsubst templates for brand overlays
+    ├── per-profile-toolkit.yaml
+    └── shared-toolkit.yaml
+```
+
+## Quick start (new brand)
 
 ```bash
-npm install
-npm run dev
+# 1. clone + install
+git clone https://github.com/leebaroneau/template-gateway.git
+cd template-gateway && npm install
+
+# 2. set Composio API key
+export COMPOSIO_API_KEY="ak_..."
+
+# 3. create auth configs in Composio dashboard (UI step — see docs/adding-a-brand.md)
+
+# 4. run the scaffold
+node scripts/composio-create-servers.mjs \
+  --brand mybrand \
+  --allowlists allowlists/outlook-mail-calendar.json,allowlists/ga4-reporting.json \
+  --auth-configs '{"outlook":"ac_abc...","google_analytics":"ac_def..."}' \
+  --shared-entity-toolkits google_analytics \
+  --output ./mybrand-composio.yaml
 ```
 
-## Endpoints
+Output is a YAML fragment ready to paste into your brand's Hermes overlay. Then add a per-profile `COMPOSIO_USER_ID` env sync to your deploy compose (template in [docs/adding-a-brand.md](docs/adding-a-brand.md)).
 
-- `GET /health`
-- `GET /providers`
-- `GET /mcp`
-- `GET /auth/microsoft/connect?actor=<email>&actorId=<profile>`
-- `GET /auth/microsoft/callback`
-- `GET /providers/microsoft/status?actor=<id-or-email>`
-- `GET /providers/microsoft/tools`
+## When to use this repo
 
-## Operator CLI
+| Situation | Use this repo? |
+|---|---|
+| Setting up a new brand on the agent stack | Yes — start with [docs/adding-a-brand.md](docs/adding-a-brand.md) |
+| Adding a new Composio toolkit to an existing brand | Yes — see [docs/adding-a-toolkit.md](docs/adding-a-toolkit.md) |
+| Composio doesn't have the toolkit you need | No — build it in your brand's deploy repo as a custom MCP server, or open a Composio request |
+| You need a native-OAuth proxy (no Composio dependency) | Maybe — `git show fd76a91:src/` resurrects the historical native gateway code from before this repo's pivot; copy it out and own it in a new repo |
 
-```bash
-npm run cli -- doctor
-npm run cli -- providers
-npm run cli -- sessions
-npm run cli -- microsoft connect --actor bot@example.com --actor-id profile-name
-npm run cli -- microsoft status --actor profile-name
-```
+## The pattern this codifies
 
-## Microsoft 365 Provider
+- **Per-toolkit Composio Hosted MCP servers** with strict `allowedTools` whitelists. Each toolkit gets one server.
+- **Per-profile entity IDs** for personal toolkits (Outlook, OneDrive, Pipedrive, Teams). Each bot signs in with its own account via in-chat OAuth.
+- **Shared brand entity** (`user_id=<brand-slug>`) for analytics toolkits (GA4, GSC, Clarity). One person signs in once for the brand; every profile reads the same connection.
+- **Persistence via brand overlay + per-profile env sync.** Hermes substitutes `${COMPOSIO_USER_ID}` and `${COMPOSIO_API_KEY}` per-profile at runtime.
 
-The template ships a Microsoft 365 provider registry entry and readiness surface. The current implementation supports provider discovery, OAuth connect URL generation, callback handling, encrypted actor-to-Microsoft-login binding storage, and status/list-tools over HTTP, MCP, and CLI.
+See [docs/architecture.md](docs/architecture.md) for the full picture.
 
-The first Microsoft tool metadata surface is read-only:
+## Status
 
-- `outlook_list_messages` requires `Mail.Read`
-- `calendar_list_events` requires `Calendars.Read`
-- `graph_request` requires `User.Read` and is reserved for allowlisted GET paths
-
-Graph action handlers are intentionally not enabled yet. Wrapper repos should connect and validate a test tenant, inspect status/audit behavior, then add Graph actions behind client-specific policy.
-
-Required Microsoft env vars for real OAuth:
-
-```env
-MICROSOFT_CLIENT_ID=
-MICROSOFT_CLIENT_SECRET=
-MICROSOFT_TENANT_ID=
-MICROSOFT_REDIRECT_URI=https://gateway.example.com/auth/microsoft/callback
-MICROSOFT_ALLOWED_TENANTS=tenant-guid
-MICROSOFT_ALLOWED_DOMAINS=example.com
-MICROSOFT_TOKEN_STORE_PATH=/data/microsoft-tokens.json
-MICROSOFT_TOKEN_STORE_KEY=base64-32-byte-key
-MICROSOFT_SCOPES=offline_access User.Read Mail.Read Calendars.Read
-```
-
-## Container Runtime
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Coolify should use the Dockerfile build pack. No runtime start-command override is required.
-
-## Client Wrappers
-
-Client deployments should use thin wrapper repos instead of editing this template directly. See [Client Wrapper Contract](docs/client-wrapper-contract.md).
-
-All service integrations should follow the shared [Service Auth Flow](docs/service-auth-flow.md): request a service, connect the upstream login, then act as that login through gateway policy and audit.
-
-For the Genvest migration guardrails, see [Genvest Migration Notes](docs/genvest-migration-notes.md).
-
-Recommended names:
-
-- `gateway-genvest`
-- `gateway-haverford`
-- `gateway-alx`
-
-## Composio-Backed Providers (Opt-In)
-
-Composio support is retained as an opt-in fallback for deployments that prefer Composio-managed upstream identity instead of native gateway OAuth. It is not the default — native `microsoft` and `google` providers ship in the default registry.
-
-To enable, set in the wrapper's `.env`:
-
-```env
-ENABLE_COMPOSIO_PROVIDERS=true
-ENABLED_PROVIDERS=microsoft,google,microsoft-composio,google-composio
-COMPOSIO_API_KEY=ck_...
-COMPOSIO_AUTH_CONFIGS_JSON={"microsoft-composio":"ac_...","google-composio":"ac_..."}
-```
-
-Composio-backed providers register under the renamed slugs `microsoft-composio` and `google-composio` so the native `microsoft` and `google` slugs remain available for the gateway's own OAuth flow.
-
-For background, see the [original Composio provider design](docs/superpowers/specs/2026-05-23-composio-provider-design.md) and the [demotion rationale](docs/superpowers/specs/2026-05-24-google-native-and-composio-demotion-design.md).
+| Component | State |
+|---|---|
+| Allowlists (9 reference toolkits) | ready |
+| Overlay templates | ready |
+| `composio-list-tools.mjs` | ready |
+| `composio-create-servers.mjs` | ready |
+| `composio-rotate-key.mjs` (lifecycle) | planned |
+| CI for scaffold script | planned |
+| First production use | Genvest (2026-05-24) |

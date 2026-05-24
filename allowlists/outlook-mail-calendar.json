@@ -1,0 +1,23 @@
+{
+  "toolkit": "outlook",
+  "description": "Outlook mail + calendar + contacts (read + send + create/update/delete events).",
+  "entity_scope": "per_profile",
+  "notes": "Each profile/bot signs in with its own Microsoft 365 account via in-chat OAuth.",
+  "tools": [
+    "OUTLOOK_LIST_MESSAGES",
+    "OUTLOOK_GET_MESSAGE",
+    "OUTLOOK_SEARCH_MESSAGES",
+    "OUTLOOK_SEND_EMAIL",
+    "OUTLOOK_REPLY_EMAIL",
+    "OUTLOOK_CREATE_DRAFT",
+    "OUTLOOK_LIST_EVENTS",
+    "OUTLOOK_GET_EVENT",
+    "OUTLOOK_CREATE_CALENDAR_EVENT",
+    "OUTLOOK_UPDATE_CALENDAR_EVENT",
+    "OUTLOOK_DELETE_CALENDAR_EVENT",
+    "OUTLOOK_LIST_CONTACTS",
+    "OUTLOOK_GET_PROFILE",
+    "OUTLOOK_FIND_MEETING_TIMES",
+    "OUTLOOK_LIST_CALENDARS"
+  ]
+}
