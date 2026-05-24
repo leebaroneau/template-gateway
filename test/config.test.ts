@@ -10,6 +10,7 @@ describe("loadConfig", () => {
       tokenStorePath: "./data/tokens.json",
       auditLogPath: "./data/audit.jsonl",
       apiBearerTokens: [],
+      enableComposioProviders: false,
       enabledProviders: ["microsoft"],
       microsoft: {
         clientId: undefined,
@@ -106,5 +107,97 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ PORT: "3000abc" })).toThrow();
     expect(() => loadConfig({ PORT: "1.5" })).toThrow();
     expect(() => loadConfig({ PORT: "abc" })).toThrow();
+  });
+});
+
+describe("loadConfig — ENABLE_COMPOSIO_PROVIDERS flag", () => {
+  it("defaults enableComposioProviders to false when env var is unset", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com"
+    });
+    expect(config.enableComposioProviders).toBe(false);
+  });
+
+  it("parses true values", () => {
+    for (const value of ["1", "true", "yes", "on", "TRUE"]) {
+      const config = loadConfig({
+        API_BASE_URL: "http://localhost:3000",
+        ALLOWED_EMAIL_DOMAINS: "example.com",
+        ENABLE_COMPOSIO_PROVIDERS: value
+      });
+      expect(config.enableComposioProviders, `value=${value}`).toBe(true);
+    }
+  });
+
+  it("parses false values", () => {
+    for (const value of ["0", "false", "no", "off", "FALSE"]) {
+      const config = loadConfig({
+        API_BASE_URL: "http://localhost:3000",
+        ALLOWED_EMAIL_DOMAINS: "example.com",
+        ENABLE_COMPOSIO_PROVIDERS: value
+      });
+      expect(config.enableComposioProviders, `value=${value}`).toBe(false);
+    }
+  });
+
+  it("throws on unparseable values", () => {
+    expect(() => loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "maybe"
+    })).toThrow(/Expected boolean/);
+  });
+});
+
+describe("loadConfig — composio block", () => {
+  it("does not parse composio config when flag is off", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com"
+    });
+    expect(config.composio).toBeUndefined();
+  });
+
+  it("parses composio config when flag is on", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "true",
+      COMPOSIO_API_KEY: "ck_test",
+      COMPOSIO_CLIENT_SLUG: "test-client"
+    });
+    expect(config.composio).toBeDefined();
+    expect(config.composio?.apiKey).toBe("ck_test");
+    expect(config.composio?.clientSlug).toBe("test-client");
+    expect(config.composio?.bindingStorePath).toBe("./data/composio-bindings.json");
+    expect(config.composio?.providers.microsoft.toolkits).toEqual(["outlook", "calendar", "onedrive"]);
+    expect(config.composio?.providers.google.toolkits).toEqual(["gmail", "googlecalendar", "googledrive"]);
+    expect(config.composio?.authConfigs).toEqual({});
+  });
+
+  it("rejects auth config map values that are not non-empty strings", () => {
+    expect(() => loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "true",
+      COMPOSIO_AUTH_CONFIGS_JSON: '{"microsoft-composio": ""}'
+    })).toThrow(/non-empty string auth config id/);
+  });
+
+  it("respects custom toolkit lists and primary toolkit override", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "true",
+      COMPOSIO_MICROSOFT_TOOLKITS: "outlook,microsoft_teams",
+      COMPOSIO_MICROSOFT_PRIMARY_TOOLKIT: "microsoft_teams",
+      COMPOSIO_GOOGLE_TOOLKITS: "gmail,googlecalendar",
+      COMPOSIO_GOOGLE_PRIMARY_TOOLKIT: "googlecalendar"
+    });
+    expect(config.composio?.providers.microsoft.toolkits).toEqual(["outlook", "microsoft_teams"]);
+    expect(config.composio?.providers.microsoft.primaryToolkit).toBe("microsoft_teams");
+    expect(config.composio?.providers.google.toolkits).toEqual(["gmail", "googlecalendar"]);
+    expect(config.composio?.providers.google.primaryToolkit).toBe("googlecalendar");
   });
 });

@@ -77,3 +77,20 @@ Recommended names:
 - `gateway-genvest`
 - `gateway-haverford`
 - `gateway-alx`
+
+## Composio-Backed Providers (Opt-In)
+
+Composio support is retained as an opt-in fallback for deployments that prefer Composio-managed upstream identity instead of native gateway OAuth. It is not the default — native `microsoft` and `google` providers ship in the default registry.
+
+To enable, set in the wrapper's `.env`:
+
+```env
+ENABLE_COMPOSIO_PROVIDERS=true
+ENABLED_PROVIDERS=microsoft,google,microsoft-composio,google-composio
+COMPOSIO_API_KEY=ck_...
+COMPOSIO_AUTH_CONFIGS_JSON={"microsoft-composio":"ac_...","google-composio":"ac_..."}
+```
+
+Composio-backed providers register under the renamed slugs `microsoft-composio` and `google-composio` so the native `microsoft` and `google` slugs remain available for the gateway's own OAuth flow.
+
+For background, see the [original Composio provider design](docs/superpowers/specs/2026-05-23-composio-provider-design.md) and the [demotion rationale](docs/superpowers/specs/2026-05-24-google-native-and-composio-demotion-design.md).

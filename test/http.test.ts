@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
 import { createHttpApp } from "../src/http.js";
+import { loadConfig } from "../src/config.js";
 import { MicrosoftProviderService } from "../src/providers/microsoft/service.js";
 import { MicrosoftOAuthStateStore } from "../src/providers/microsoft/state-store.js";
 import { MicrosoftTokenStore } from "../src/providers/microsoft/token-store.js";
@@ -28,6 +29,7 @@ describe("HTTP app", () => {
         auth: "oauth",
         mcpPath: "/mcp/microsoft",
         scopesSummary: "Delegated Microsoft Graph access for the connected Microsoft login.",
+        backend: "native",
         url: "http://localhost:3000/mcp/microsoft"
       },
       {
@@ -37,6 +39,7 @@ describe("HTTP app", () => {
         auth: "oauth",
         mcpPath: "/mcp/pipedrive",
         scopesSummary: "Delegated Pipedrive access for the connected Pipedrive user.",
+        backend: "native",
         url: "http://localhost:3000/mcp/pipedrive"
       }
     ]);
@@ -177,6 +180,7 @@ function baseConfig() {
     tokenStorePath: "./data/tokens.json",
     auditLogPath: "./data/audit.jsonl",
     apiBearerTokens: [],
+    enableComposioProviders: false,
     enabledProviders: ["microsoft", "pipedrive"],
     microsoft: {
       clientId: undefined,
@@ -231,3 +235,60 @@ function jsonResponse(body: unknown): Response {
     text: async () => JSON.stringify(body)
   } as Response;
 }
+
+describe("HTTP — native Microsoft routes claim /auth/microsoft/*", () => {
+  const baseEnv = {
+    API_BASE_URL: "http://localhost:3000",
+    ALLOWED_EMAIL_DOMAINS: "example.com",
+    ENABLED_PROVIDERS: "microsoft",
+    MICROSOFT_CLIENT_ID: "test-client",
+    MICROSOFT_CLIENT_SECRET: "test-secret",
+    MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+    MICROSOFT_TOKEN_STORE_KEY: Buffer.from("0".repeat(32)).toString("base64")
+  };
+
+  it("exposes /auth/microsoft/connect", async () => {
+    const app = createHttpApp({ config: loadConfig(baseEnv) });
+    const res = await request(app).get("/auth/microsoft/connect?actor=test@example.com");
+    expect(res.status).not.toBe(404);
+  });
+
+  it("does not expose /auth/microsoft-native/connect anymore", async () => {
+    const app = createHttpApp({ config: loadConfig(baseEnv) });
+    const res = await request(app).get("/auth/microsoft-native/connect?actor=test@example.com");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("HTTP — composio routes are flag-gated", () => {
+  const composioEnv = {
+    API_BASE_URL: "http://localhost:3000",
+    ALLOWED_EMAIL_DOMAINS: "example.com",
+    ENABLED_PROVIDERS: "microsoft,microsoft-composio",
+    ENABLE_COMPOSIO_PROVIDERS: "true",
+    COMPOSIO_API_KEY: "ck_test",
+    MICROSOFT_CLIENT_ID: "test-client",
+    MICROSOFT_CLIENT_SECRET: "test-secret",
+    MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+    MICROSOFT_TOKEN_STORE_KEY: Buffer.from("0".repeat(32)).toString("base64")
+  };
+
+  it("exposes /providers/microsoft-composio/connect when flag is on", async () => {
+    const app = createHttpApp({ config: loadConfig(composioEnv) });
+    const res = await request(app).get("/providers/microsoft-composio/connect?actor=test@example.com&actorId=p1");
+    expect(res.status).not.toBe(404);
+  });
+
+  it("does NOT expose /providers/microsoft-composio/connect when flag is off", async () => {
+    const offEnv = { ...composioEnv, ENABLE_COMPOSIO_PROVIDERS: "false", ENABLED_PROVIDERS: "microsoft" };
+    const app = createHttpApp({ config: loadConfig(offEnv) });
+    const res = await request(app).get("/providers/microsoft-composio/connect?actor=test@example.com&actorId=p1");
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects /providers/microsoft (the native slug) on the generic provider route", async () => {
+    const app = createHttpApp({ config: loadConfig(composioEnv) });
+    const res = await request(app).get("/providers/microsoft/connect?actor=test@example.com&actorId=p1");
+    expect([400, 404]).toContain(res.status);
+  });
+});

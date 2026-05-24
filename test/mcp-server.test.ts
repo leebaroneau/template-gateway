@@ -122,6 +122,56 @@ function createFakeServer() {
     tools: {} as Record<string, { description: string; schema: any; handler: any }>,
     tool(name: string, description: string, schema: any, handler: any) {
       this.tools[name] = { description, schema, handler };
+    },
+    toolNames() {
+      return Object.keys(this.tools);
     }
   };
 }
+
+describe("MCP — composio tools are flag-gated", () => {
+  it("does not register provider_connect/status/mcp_url when enableComposioProviders is false", async () => {
+    const server = createFakeServer();
+    createGatewayMcpServer(server, {
+      providers: createProviderRegistry([]),
+      apiBaseUrl: "http://localhost:3000"
+    });
+    expect(server.toolNames()).not.toContain("provider_connect");
+    expect(server.toolNames()).not.toContain("provider_status");
+    expect(server.toolNames()).not.toContain("provider_mcp_url");
+  });
+
+  it("registers provider_connect/status/mcp_url when composioProvider is supplied and enableComposioProviders is true", async () => {
+    const server = createFakeServer();
+    createGatewayMcpServer(server, {
+      providers: createProviderRegistry([]),
+      apiBaseUrl: "http://localhost:3000",
+      enableComposioProviders: true,
+      composioProvider: {
+        createConnectUrl: async () => ({ provider: "microsoft-composio", backend: "composio", status: "authorization_required", actorId: "test", connectedAccountIds: [] }),
+        status: async () => ({ provider: "microsoft-composio", backend: "composio", status: "disconnected", actorId: "test", connectedAccountIds: [] }),
+        mcpUrl: async () => ({ provider: "microsoft-composio", backend: "composio", status: "disconnected", actorId: "test", connectedAccountIds: [] })
+      }
+    });
+    expect(server.toolNames()).toContain("provider_connect");
+    expect(server.toolNames()).toContain("provider_status");
+    expect(server.toolNames()).toContain("provider_mcp_url");
+  });
+
+  it("does not register composio tools when enableComposioProviders is false even if composioProvider is supplied", async () => {
+    const server = createFakeServer();
+    createGatewayMcpServer(server, {
+      providers: createProviderRegistry([]),
+      apiBaseUrl: "http://localhost:3000",
+      enableComposioProviders: false,
+      composioProvider: {
+        createConnectUrl: async () => ({ provider: "microsoft-composio", backend: "composio", status: "authorization_required", actorId: "test", connectedAccountIds: [] }),
+        status: async () => ({ provider: "microsoft-composio", backend: "composio", status: "disconnected", actorId: "test", connectedAccountIds: [] }),
+        mcpUrl: async () => ({ provider: "microsoft-composio", backend: "composio", status: "disconnected", actorId: "test", connectedAccountIds: [] })
+      }
+    });
+    expect(server.toolNames()).not.toContain("provider_connect");
+    expect(server.toolNames()).not.toContain("provider_status");
+    expect(server.toolNames()).not.toContain("provider_mcp_url");
+  });
+});

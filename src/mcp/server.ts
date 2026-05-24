@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { createProviderDirectory } from "../providers/directory.js";
 import type { MicrosoftProviderService } from "../providers/microsoft/service.js";
+import type { ComposioProviderService } from "../providers/composio/service.js";
+import type { ComposioGatewayProvider } from "../providers/composio/types.js";
 import type { ProviderRegistry } from "../providers/types.js";
 
 interface ToolCapableServer {
@@ -16,6 +18,8 @@ export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
   microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools">;
+  enableComposioProviders?: boolean;
+  composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
 
 export function createGatewayMcpServer<T extends ToolCapableServer>(
@@ -70,6 +74,54 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
         provider: "microsoft",
         tools: options.microsoftProvider!.listTools()
       })
+    );
+  }
+
+  if (options.enableComposioProviders && options.composioProvider) {
+    const composioProvider = options.composioProvider;
+
+    server.tool(
+      "provider_connect",
+      "Return a Composio provider connect URL for the authenticated gateway actor.",
+      { provider: z.enum(["microsoft-composio", "google-composio"]) },
+      async (input: { provider: ComposioGatewayProvider }, extra) => {
+        const identity = extra?.authInfo?.extra;
+        if (!identity?.email) {
+          throw new Error("actor identity required");
+        }
+        const actor = {
+          actorId: actorKeyFromExtra(extra),
+          actorEmail: identity.email,
+          actorName: identity.name
+        };
+        return toolResult(await composioProvider.createConnectUrl(input.provider, actor));
+      }
+    );
+
+    server.tool(
+      "provider_status",
+      "Return Composio connection status for the authenticated gateway actor.",
+      { provider: z.enum(["microsoft-composio", "google-composio"]) },
+      async (input: { provider: ComposioGatewayProvider }, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) {
+          throw new Error("actor identity required");
+        }
+        return toolResult(await composioProvider.status(input.provider, actor));
+      }
+    );
+
+    server.tool(
+      "provider_mcp_url",
+      "Return the Composio MCP URL scoped to the authenticated gateway actor or connected account.",
+      { provider: z.enum(["microsoft-composio", "google-composio"]) },
+      async (input: { provider: ComposioGatewayProvider }, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) {
+          throw new Error("actor identity required");
+        }
+        return toolResult(await composioProvider.mcpUrl(input.provider, actor));
+      }
     );
   }
 
