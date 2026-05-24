@@ -32,10 +32,11 @@ export function makeComposioSessionFactory(opts: {
     }
     if (opts.authConfigs && Object.keys(opts.authConfigs).length) {
       // Composio Tool Router auto-creates auth configs for managed-OAuth toolkits
-      // but requires explicit auth_configs for toolkits whose auth was provided
-      // by the user (API key auth like microsoft_clarity, or custom OAuth like
-      // pipedrive/docusign). Map shape: { "<toolkit_slug>": "ac_xxx" }.
-      sessionConfig.auth_configs = opts.authConfigs;
+      // but requires an explicit map for toolkits whose auth was provided by the
+      // user (API key auth like microsoft_clarity, or custom OAuth like pipedrive
+      // / docusign). SDK schema is camelCase even though the API returns the
+      // snake_case form in error messages. Map shape: { toolkit_slug: "ac_xxx" }.
+      sessionConfig.authConfigs = opts.authConfigs;
     }
     if (opts.composioProjectId) {
       sessionConfig.projectId = opts.composioProjectId;
