@@ -390,7 +390,9 @@ describe("MicrosoftProviderService.listMessages", () => {
 
 describe("MicrosoftProviderService.listEvents", () => {
   it("returns Graph events for a connected actor with Calendars.Read", async () => {
+    const captured: string[] = [];
     const fetchImpl = (async (url: string, init?: RequestInit) => {
+      captured.push(url);
       if (typeof url === "string" && url.startsWith("https://graph.microsoft.com/v1.0/me/calendar/events")) {
         const headers = init?.headers as Record<string, string>;
         expect(headers.Authorization).toBe("Bearer bound-access-token");
@@ -404,12 +406,37 @@ describe("MicrosoftProviderService.listEvents", () => {
     const ctx = await setupBoundService({ scope: "offline_access User.Read Calendars.Read", expiresInSec: 3600 }, fetchImpl);
     const result = await ctx.service.listEvents("bot@example.com", { top: 10 });
     expect((result.events[0] as { subject: string }).subject).toBe("Standup");
+    expect(captured[0]).toContain("$top=10");
     ctx.cleanup();
   });
 
   it("rejects when Calendars.Read is not bound", async () => {
     const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
     await expect(ctx.service.listEvents("bot@example.com", {})).rejects.toThrow(/Calendars\.Read/);
+    ctx.cleanup();
+  });
+
+  it("includes encoded $filter with start/dateTime ge and end/dateTime le when timeMin and timeMax are supplied", async () => {
+    const captured: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      captured.push(url);
+      if (typeof url === "string" && url.startsWith("https://graph.microsoft.com/v1.0/me/calendar/events")) {
+        return new Response(JSON.stringify({ value: [], "@odata.nextLink": null }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Calendars.Read", expiresInSec: 3600 }, fetchImpl);
+    await ctx.service.listEvents("bot@example.com", {
+      top: 25,
+      timeMin: "2026-05-25T00:00:00Z",
+      timeMax: "2026-05-26T00:00:00Z"
+    });
+    // $filter must be present and URL-encoded
+    expect(captured[0]).toContain("$filter=");
+    // single-side filter parts should be visible after decoding
+    expect(decodeURIComponent(captured[0])).toContain("start/dateTime ge '2026-05-25T00:00:00Z'");
+    expect(decodeURIComponent(captured[0])).toContain("end/dateTime le '2026-05-26T00:00:00Z'");
+    expect(decodeURIComponent(captured[0])).toContain(" and ");
     ctx.cleanup();
   });
 });

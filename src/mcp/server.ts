@@ -91,14 +91,19 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
       }
     );
 
+    const isoDateLike = z.string().regex(
+      /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/,
+      "expected ISO 8601 date or datetime (e.g. 2026-05-25 or 2026-05-25T09:00:00Z)"
+    );
+
     server.tool(
       "calendar_list_events",
       "List Microsoft 365 calendar events for the authenticated gateway actor. Requires Calendars.Read.",
       {
         top: z.number().int().min(1).max(100).optional(),
         skip: z.number().int().min(0).optional(),
-        timeMin: z.string().min(1).optional(),
-        timeMax: z.string().min(1).optional()
+        timeMin: isoDateLike.optional(),
+        timeMax: isoDateLike.optional()
       },
       async (input, extra) => {
         const actor = actorKeyFromExtra(extra);
