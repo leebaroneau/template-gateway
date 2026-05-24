@@ -258,3 +258,36 @@ describe("HTTP — native Microsoft routes claim /auth/microsoft/*", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("HTTP — composio routes are flag-gated", () => {
+  const composioEnv = {
+    API_BASE_URL: "http://localhost:3000",
+    ALLOWED_EMAIL_DOMAINS: "example.com",
+    ENABLED_PROVIDERS: "microsoft,microsoft-composio",
+    ENABLE_COMPOSIO_PROVIDERS: "true",
+    COMPOSIO_API_KEY: "ck_test",
+    MICROSOFT_CLIENT_ID: "test-client",
+    MICROSOFT_CLIENT_SECRET: "test-secret",
+    MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+    MICROSOFT_TOKEN_STORE_KEY: Buffer.from("0".repeat(32)).toString("base64")
+  };
+
+  it("exposes /providers/microsoft-composio/connect when flag is on", async () => {
+    const app = createHttpApp({ config: loadConfig(composioEnv) });
+    const res = await request(app).get("/providers/microsoft-composio/connect?actor=test@example.com&actorId=p1");
+    expect(res.status).not.toBe(404);
+  });
+
+  it("does NOT expose /providers/microsoft-composio/connect when flag is off", async () => {
+    const offEnv = { ...composioEnv, ENABLE_COMPOSIO_PROVIDERS: "false", ENABLED_PROVIDERS: "microsoft" };
+    const app = createHttpApp({ config: loadConfig(offEnv) });
+    const res = await request(app).get("/providers/microsoft-composio/connect?actor=test@example.com&actorId=p1");
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects /providers/microsoft (the native slug) on the generic provider route", async () => {
+    const app = createHttpApp({ config: loadConfig(composioEnv) });
+    const res = await request(app).get("/providers/microsoft/connect?actor=test@example.com&actorId=p1");
+    expect([400, 404]).toContain(res.status);
+  });
+});
