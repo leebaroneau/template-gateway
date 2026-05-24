@@ -80,6 +80,31 @@ describe("forwardJsonRpc", () => {
     expect(upstreamFetch).not.toHaveBeenCalled();
   });
 
+  it("returns 502 (does not crash) when the session factory throws", async () => {
+    const upstreamFetch = makeFetch({ status: 200, body: "{}" });
+    const failingFactory = vi.fn(async () => {
+      throw new Error("Composio auth_configs missing for docusign");
+    });
+    const failingCache = new SessionCache(failingFactory, { ttlSeconds: 60 });
+    const app = express();
+    const router = express.Router();
+    router.use(express.json());
+    router.use(bearerAuth("a_secret_thats_long_enough"));
+    router.use(actorContext("brand-default"));
+    router.post("/", (req, res) => forwardJsonRpc(req, res, { cache: failingCache, fetchImpl: upstreamFetch }));
+    app.use("/mcp", router);
+
+    const res = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer a_secret_thats_long_enough")
+      .set("X-Composio-User-Id", "user-marketing")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({ error: expect.stringContaining("session") });
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
   it("invalidates the cache on upstream 401", async () => {
     const upstreamFetch = makeFetch({ status: 401, body: '{"error":"unauthorized"}' });
     const { app, cache } = buildApp({ fetchImpl: upstreamFetch });

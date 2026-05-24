@@ -10,6 +10,7 @@ describe("loadConfig", () => {
     delete process.env.BRAND_SLUG;
     delete process.env.GATEWAY_BEARER;
     delete process.env.TOOLKIT_ALLOWLIST;
+    delete process.env.AUTH_CONFIGS;
     delete process.env.PORT;
     delete process.env.SESSION_TTL_SECONDS;
   });
@@ -62,5 +63,26 @@ describe("loadConfig", () => {
     process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
     process.env.SESSION_TTL_SECONDS = "10";
     expect(() => loadConfig()).toThrow(/at least 60/);
+  });
+
+  it("parses AUTH_CONFIGS as a toolkit→ac_id map", () => {
+    process.env.COMPOSIO_API_KEY = "ak_test";
+    process.env.BRAND_SLUG = "genvest";
+    process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
+    process.env.AUTH_CONFIGS = "docusign:ac_doc, MICROSOFT_clarity : ac_clar,pipedrive:ac_pipe";
+    const cfg = loadConfig();
+    expect(cfg.authConfigs).toEqual({
+      docusign: "ac_doc",
+      microsoft_clarity: "ac_clar",
+      pipedrive: "ac_pipe"
+    });
+  });
+
+  it("rejects malformed AUTH_CONFIGS entries", () => {
+    process.env.COMPOSIO_API_KEY = "ak_test";
+    process.env.BRAND_SLUG = "genvest";
+    process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
+    process.env.AUTH_CONFIGS = "outlook";
+    expect(() => loadConfig()).toThrow(/toolkit:ac_xxx/);
   });
 });
