@@ -124,6 +124,7 @@ describe("buildCli", () => {
         tokenStorePath: "./tokens.json",
         auditLogPath: "./audit.jsonl",
         apiBearerTokens: [],
+        enableComposioProviders: false,
         enabledProviders: ["microsoft"],
         microsoft: {
           clientId: undefined,

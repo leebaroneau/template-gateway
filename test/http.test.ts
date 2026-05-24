@@ -180,6 +180,7 @@ function baseConfig() {
     tokenStorePath: "./data/tokens.json",
     auditLogPath: "./data/audit.jsonl",
     apiBearerTokens: [],
+    enableComposioProviders: false,
     enabledProviders: ["microsoft", "pipedrive"],
     microsoft: {
       clientId: undefined,

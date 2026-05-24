@@ -12,10 +12,14 @@ import type {
 } from "./types.js";
 
 export function createComposioProviderService(config: GatewayConfig): ComposioProviderService {
+  if (!config.composio) {
+    throw new Error("Composio config is undefined. Set ENABLE_COMPOSIO_PROVIDERS=true to enable Composio-backed providers.");
+  }
+  const composio = config.composio;
   return new ComposioProviderService({
-    config: config.composio,
-    bindingStore: new ComposioBindingStore(config.composio.bindingStorePath),
-    client: new ComposioSdkSessionClient(config.composio.apiKey)
+    config: composio,
+    bindingStore: new ComposioBindingStore(composio.bindingStorePath),
+    client: new ComposioSdkSessionClient(composio.apiKey)
   });
 }
 

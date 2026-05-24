@@ -12,7 +12,10 @@ import {
 } from "./types.js";
 
 interface ComposioProviderServiceOptions {
-  config: GatewayConfig["composio"];
+  // Narrowed to NonNullable because the factory guards against `config.composio === undefined`
+  // before constructing this service. Callers that construct the service directly (e.g. tests
+  // with stub clients) must also pass a non-undefined composio config block.
+  config: NonNullable<GatewayConfig["composio"]>;
   bindingStore: ComposioBindingStore;
   client: ComposioSessionClient;
 }

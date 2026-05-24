@@ -171,7 +171,6 @@ function createService(tempDir: string, client: ComposioSessionClient): Composio
       apiKey: "cmp_test",
       bindingStorePath: join(tempDir, "composio-bindings.json"),
       clientSlug: "genvest",
-      defaultBackendEnabled: true,
       authConfigs: { outlook: "ac_outlook" },
       providers: {
         microsoft: {
