@@ -292,6 +292,41 @@ describe("MicrosoftProviderService.sendEmail", () => {
       .rejects.toThrow(/Mail\.Send/);
     ctx.cleanup();
   });
+
+  // Fix 2: Graph 4xx response body must never appear in audit error field
+  it("audit error never contains the email subject or body even when Graph 4xx echoes them", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (url: string) => {
+      if (typeof url === "string" && url === "https://graph.microsoft.com/v1.0/me/sendMail") {
+        // Simulate Graph echoing the subject and body back in a 400 error body.
+        return new Response(
+          "Invalid request: subject 'Secret Deal' body 'Confidential payload here'",
+          { status: 400, headers: { "request-id": "abc-123" } }
+        );
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit(
+      { scope: "offline_access User.Read Mail.Send", expiresInSec: 3600 },
+      fetchImpl,
+      (entry) => audits.push(entry)
+    );
+    (ctx.service as any).options.config.sendEmailEnabled = true;
+    await expect(
+      ctx.service.sendEmail("bot@example.com", {
+        to: ["x@example.com"],
+        subject: "Secret Deal",
+        body: "Confidential payload here"
+      })
+    ).rejects.toThrow();
+    const audit = audits[0] as any;
+    const serialized = JSON.stringify(audit);
+    expect(serialized).not.toContain("Secret Deal");
+    expect(serialized).not.toContain("Confidential payload here");
+    // Request-id should be present for correlation.
+    expect(audit.error).toContain("abc-123");
+    ctx.cleanup();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -415,6 +450,35 @@ describe("MicrosoftProviderService.requireValidAccessToken", () => {
       cleanup();
     }
   });
+
+  // Fix 4: concurrent refresh calls for the same actor must be deduplicated
+  it("deduplicates concurrent refresh calls for the same actor", async () => {
+    let tokenExchanges = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (typeof url === "string" && url.endsWith("/oauth2/v2.0/token") && init?.method === "POST") {
+        tokenExchanges += 1;
+        // Hold long enough that the second call definitely starts before this resolves.
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return new Response(JSON.stringify({
+          access_token: "fresh-token",
+          refresh_token: "fresh-refresh",
+          token_type: "Bearer",
+          scope: "offline_access User.Read Mail.Read",
+          expires_in: 3600
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: -1 }, fetchImpl);
+    const [a, b] = await Promise.all([
+      ctx.service.requireValidAccessToken("bot@example.com", "Mail.Read"),
+      ctx.service.requireValidAccessToken("bot@example.com", "Mail.Read")
+    ]);
+    expect(tokenExchanges).toBe(1);
+    expect(a.accessToken).toBe("fresh-token");
+    expect(b.accessToken).toBe("fresh-token");
+    ctx.cleanup();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -447,6 +511,14 @@ describe("MicrosoftProviderService.listMessages", () => {
   it("rejects when Mail.Read is not bound", async () => {
     const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
     await expect(ctx.service.listMessages("bot@example.com", {})).rejects.toThrow(/Mail\.Read/);
+    ctx.cleanup();
+  });
+
+  // Fix 9: malformed Graph response for listMessages
+  it("throws when Graph returns a malformed shape (value not an array)", async () => {
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: "shape changed" }), { status: 200 })) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 }, fetchImpl);
+    await expect(ctx.service.listMessages("bot@example.com", {})).rejects.toThrow(/unexpected shape/i);
     ctx.cleanup();
   });
 });
@@ -504,6 +576,31 @@ describe("MicrosoftProviderService.listEvents", () => {
     expect(decodeURIComponent(captured[0])).toContain("start/dateTime ge '2026-05-25T00:00:00Z'");
     expect(decodeURIComponent(captured[0])).toContain("end/dateTime le '2026-05-26T00:00:00Z'");
     expect(decodeURIComponent(captured[0])).toContain(" and ");
+    ctx.cleanup();
+  });
+
+  // Fix 5: OData injection via timeMin/timeMax must be rejected at service layer
+  it("rejects OData injection via timeMin at the service layer (not just MCP)", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Calendars.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.listEvents("bot@example.com", { timeMin: "2026-05-25T00:00:00Z' or '1'='1" })
+    ).rejects.toThrow(/timeMin.*ISO 8601/i);
+    ctx.cleanup();
+  });
+
+  it("rejects OData injection via timeMax at the service layer", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Calendars.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.listEvents("bot@example.com", { timeMax: "2026-05-25T00:00:00Z' or 1=1 --" })
+    ).rejects.toThrow(/timeMax.*ISO 8601/i);
+    ctx.cleanup();
+  });
+
+  // Fix 9: malformed Graph response for listEvents
+  it("throws when Graph returns a malformed shape (value not an array)", async () => {
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: "shape changed" }), { status: 200 })) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Calendars.Read", expiresInSec: 3600 }, fetchImpl);
+    await expect(ctx.service.listEvents("bot@example.com", {})).rejects.toThrow(/unexpected shape/i);
     ctx.cleanup();
   });
 });
@@ -577,6 +674,69 @@ describe("MicrosoftProviderService.graphRequest", () => {
     await expect(
       ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me#frag" })
     ).rejects.toThrow(/path.*not allowed|invalid path/i);
+    ctx.cleanup();
+  });
+
+  // Fix 1: double-encoded path traversal
+  it("rejects double-encoded path traversal (%252E%252E)", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me/%252E%252E/users" })
+    ).rejects.toThrow(/path.*not allowed|invalid path/i);
+    ctx.cleanup();
+  });
+
+  // Fix 6: non-2xx responses must throw and produce correct audit status
+  it("throws and audits 401 as reconnect_required", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (url: string) => {
+      if (typeof url === "string" && url === "https://graph.microsoft.com/v1.0/me") {
+        return new Response(JSON.stringify({ error: { code: "InvalidAuthenticationToken" } }), { status: 401 });
+      }
+      throw new Error(`Unexpected: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit(
+      { scope: "offline_access User.Read", expiresInSec: 3600 },
+      fetchImpl,
+      (entry) => audits.push(entry)
+    );
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me" })
+    ).rejects.toThrow(/reconnect_required/i);
+    expect(audits[0]).toMatchObject({ tool: "graph_request", status: "reconnect_required" });
+    // Binding should also be flipped in the token store.
+    const status = await ctx.service.status("bot@example.com");
+    expect(status.status).toBe("reconnect_required");
+    ctx.cleanup();
+  });
+
+  it("throws and audits 403 as denied", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit(
+      { scope: "offline_access User.Read", expiresInSec: 3600 },
+      fetchImpl,
+      (entry) => audits.push(entry)
+    );
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me" })
+    ).rejects.toThrow(/denied|required scope/i);
+    expect(audits[0]).toMatchObject({ tool: "graph_request", status: "denied" });
+    ctx.cleanup();
+  });
+
+  it("throws and audits non-2xx-non-401-non-403 as error", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: "Internal" }), { status: 500 })) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit(
+      { scope: "offline_access User.Read", expiresInSec: 3600 },
+      fetchImpl,
+      (entry) => audits.push(entry)
+    );
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me" })
+    ).rejects.toThrow(/failed: 500/);
+    expect(audits[0]).toMatchObject({ tool: "graph_request", status: "error" });
     ctx.cleanup();
   });
 });

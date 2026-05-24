@@ -3,6 +3,10 @@ import type { MicrosoftOAuthStateStore } from "./state-store.js";
 import type { MicrosoftTokenStore } from "./token-store.js";
 import type { MicrosoftActor, MicrosoftProviderConfig, MicrosoftStatus } from "./types.js";
 
+// Fix 5: ISO 8601 datetime regex — exported so server.ts can reuse it instead
+// of duplicating the literal.
+export const ISO_8601_DATE_TIME = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/;
+
 interface MicrosoftAuditEntry {
   provider: "microsoft";
   tool: string;
@@ -76,6 +80,11 @@ interface MicrosoftProfileResponse {
 
 export class MicrosoftProviderService {
   private readonly fetchImpl: typeof fetch;
+  // Fix 4: per-actor in-flight refresh deduplication. Prevents a concurrent
+  // pair of expired-token calls from both initiating a refresh and the second
+  // using the now-revoked refresh token (triggering invalid_grant + wipe of
+  // the first call's freshly stored token).
+  private readonly inflightRefreshes = new Map<string, Promise<{ accessToken: string; scopes: string[]; scope: string; expiresAt?: string }>>();
 
   constructor(private readonly options: MicrosoftProviderServiceOptions) {
     this.fetchImpl = options.fetch ?? fetch;
@@ -209,8 +218,14 @@ export class MicrosoftProviderService {
         body: JSON.stringify(message)
       });
       if (!response.ok && response.status !== 202) {
-        const text = await response.text().catch(() => "");
-        throw new Error(`Graph sendMail failed: ${response.status} ${text.slice(0, 200)}`);
+        // Do NOT include the Graph response body in the error message — it
+        // may echo back the user-supplied subject/body and would leak into
+        // the audit record's `error` field, violating the sendEmail privacy
+        // contract. Capture the upstream request id for correlation instead.
+        const requestId = response.headers.get("request-id") ?? response.headers.get("client-request-id") ?? undefined;
+        // Drain the body so the connection can be released.
+        await response.text().catch(() => "");
+        throw new Error(`Graph sendMail failed: ${response.status}${requestId ? ` (request-id ${requestId})` : ""}`);
       }
       return { status: response.status };
     });
@@ -235,8 +250,11 @@ export class MicrosoftProviderService {
       if (!response.ok) {
         throw new Error(`Graph listMessages failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
       }
+      if (!Array.isArray(payload.value)) {
+        throw new Error(`Graph listMessages returned unexpected shape (value not array).`);
+      }
       return {
-        messages: payload.value ?? [],
+        messages: payload.value,
         nextLink: payload["@odata.nextLink"] ?? null
       };
     });
@@ -247,6 +265,14 @@ export class MicrosoftProviderService {
     options: { top?: number; skip?: number; timeMin?: string; timeMax?: string }
   ): Promise<{ events: unknown[]; nextLink?: string | null }> {
     return this.runTool(actorIdOrEmail, { tool: "calendar_list_events", requiredScope: "Calendars.Read", method: "GET", path: "/me/calendar/events" }, async () => {
+      // Fix 5: validate timeMin/timeMax at the service layer before building
+      // the OData filter — direct callers bypass the MCP Zod schema.
+      if (options.timeMin !== undefined && !ISO_8601_DATE_TIME.test(options.timeMin)) {
+        throw new Error(`calendar_list_events timeMin must be ISO 8601: ${options.timeMin}`);
+      }
+      if (options.timeMax !== undefined && !ISO_8601_DATE_TIME.test(options.timeMax)) {
+        throw new Error(`calendar_list_events timeMax must be ISO 8601: ${options.timeMax}`);
+      }
       const token = await this.requireValidAccessToken(actorIdOrEmail, "Calendars.Read");
       const params: string[] = [];
       if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
@@ -264,8 +290,12 @@ export class MicrosoftProviderService {
       if (!response.ok) {
         throw new Error(`Graph listEvents failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
       }
+      // Fix 9: reject malformed Graph responses that omit the value array.
+      if (!Array.isArray(payload.value)) {
+        throw new Error(`Graph listEvents returned unexpected shape (value not array).`);
+      }
       return {
-        events: payload.value ?? [],
+        events: payload.value,
         nextLink: payload["@odata.nextLink"] ?? null
       };
     });
@@ -286,6 +316,21 @@ export class MicrosoftProviderService {
         headers: { Authorization: `Bearer ${token.accessToken}` }
       });
       const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        // 401 means token rejected post-auth (rare since requireValidAccessToken
+        // just refreshed). Surface as reconnect_required so the audit
+        // classification catches it; the caller can re-auth.
+        if (response.status === 401) {
+          await this.options.tokenStore.markReconnectRequired(actorIdOrEmail);
+          throw new Error(`graph_request returned 401; binding marked reconnect_required.`);
+        }
+        // 403 means the bound scope was insufficient for the resource
+        // (Graph-side scope mismatch, not local). Surface as a denied-style error.
+        if (response.status === 403) {
+          throw new Error(`graph_request denied by Graph (403): required scope likely insufficient.`);
+        }
+        throw new Error(`graph_request failed: ${response.status}`);
+      }
       return { status: response.status, body };
     });
   }
@@ -305,7 +350,12 @@ export class MicrosoftProviderService {
       decoded.includes("..") ||
       decoded.includes("\\") ||
       decoded.includes("?") ||
-      decoded.includes("#")
+      decoded.includes("#") ||
+      // Fix 1: reject double-encoded inputs (%252E%252E etc.). MCP-supplied
+      // paths are always plain (/me/messages/<id>); a remaining % after one
+      // decode round means the caller tried double-encoding to sneak past this
+      // check. Reject rather than let Graph normalise server-side.
+      decoded.includes("%")
     ) {
       throw new Error(`graph_request path not allowed (invalid path): ${path}`);
     }
@@ -341,6 +391,26 @@ export class MicrosoftProviderService {
   }
 
   private async refreshAccessToken(
+    actorIdOrEmail: string,
+    refreshToken: string | undefined
+  ): Promise<{ accessToken: string; scopes: string[]; scope: string; expiresAt?: string }> {
+    // Fix 4: deduplicate concurrent refresh calls for the same actor.
+    // Two concurrent expired-token calls would both read the stale refresh
+    // token; the second call uses the now-revoked token (invalid_grant) and
+    // wipes the fresh token written by the first. Coalesce by actor key.
+    const key = actorIdOrEmail.trim().toLowerCase();
+    const existing = this.inflightRefreshes.get(key);
+    if (existing) return existing;
+    const promise = this.performRefresh(actorIdOrEmail, refreshToken);
+    this.inflightRefreshes.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inflightRefreshes.delete(key);
+    }
+  }
+
+  private async performRefresh(
     actorIdOrEmail: string,
     refreshToken: string | undefined
   ): Promise<{ accessToken: string; scopes: string[]; scope: string; expiresAt?: string }> {

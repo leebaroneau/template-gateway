@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createProviderDirectory } from "../providers/directory.js";
 import type { MicrosoftProviderService } from "../providers/microsoft/service.js";
+import { ISO_8601_DATE_TIME } from "../providers/microsoft/service.js";
 import type { ComposioProviderService } from "../providers/composio/service.js";
 import type { ComposioGatewayProvider } from "../providers/composio/types.js";
 import type { ProviderRegistry } from "../providers/types.js";
@@ -91,8 +92,10 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
       }
     );
 
+    // Fix 5: share the ISO 8601 regex with the service layer so the two
+    // validation points stay in sync.
     const isoDateLike = z.string().regex(
-      /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/,
+      ISO_8601_DATE_TIME,
       "expected ISO 8601 date or datetime (e.g. 2026-05-25 or 2026-05-25T09:00:00Z)"
     );
 
