@@ -64,8 +64,8 @@ Composio Tool Router (backend.composio.dev/v3/tool_router/<session_id>/mcp)
 
 | Repo | Role | Branch / status |
 |---|---|---|
-| `leebaroneau/template-gateway` | Brand-agnostic runtime image: HTTP + thin proxy. Plus the existing scaffolding (allowlists, docs, overlay templates). | `main` (current scaffolding from PR #9 stays; runtime code added) |
-| `genvest/gateway-genvest` | Brand-specific config + deploy. `compose.yaml` pulls `ghcr.io/leebaroneau/template-gateway:sha-XXX`. `.env` has brand creds. Coolify deploys this. | Wipe current native-OAuth code; replace with config-only repo |
+| `leebaroneau/template-gateway` | Brand-agnostic runtime: src + Dockerfile + scaffolding. Coolify builds the Dockerfile directly from this repo per deploy — no image registry indirection (the build is fast enough that GHCR isn't worth the maintenance cost). | `main` (current scaffolding from PR #9 stays; runtime code added) |
+| `genvest/gateway-genvest` | Brand-specific config + deploy. Coolify app points at `leebaroneau/template-gateway` @ `main`, builds the Dockerfile, injects brand env. Repo holds a README documenting the wiring + any brand-only assets (FQDN, etc.). | Wipe current native-OAuth code; replace with thin config repo |
 | `genvest/agent-genvest` | (Already on the new pattern.) Brand overlay changes from 9 composio entries → 1 gateway entry; final step after gateway is proven. | Trivial follow-up PR; reversible |
 
 ## 6. Runtime code (template-gateway)
@@ -81,8 +81,7 @@ template-gateway/
 │   ├── auth.ts                     # Bearer token validation
 │   └── config.ts                   # Env loader (COMPOSIO_API_KEY, BRAND_SLUG, etc.)
 ├── test/                           # Vitest unit tests for proxy + cache
-├── Dockerfile
-├── .github/workflows/build-image.yml   # builds + pushes ghcr.io/leebaroneau/template-gateway:sha-XXX on main
+├── Dockerfile                          # Coolify builds from source on each deploy (no registry)
 ├── package.json
 └── (existing scaffolding stays: allowlists/, scripts/, overlay-templates/, docs/)
 ```
@@ -106,13 +105,19 @@ template-gateway/
 
 ```
 gateway-genvest/
-├── compose.yaml                    # pulls ghcr.io/leebaroneau/template-gateway:sha-XXX
-├── .env.example                    # COMPOSIO_API_KEY, BRAND_SLUG, GATEWAY_BEARER
-├── README.md                       # how this brand's gateway is configured
-└── .github/                        # Coolify webhook + Pipeline Core configs
+├── README.md                       # documents Coolify wiring (source repo, env vars, FQDN)
+├── .env.example                    # COMPOSIO_API_KEY, BRAND_SLUG, GATEWAY_BEARER (for local dev only)
+└── .github/                        # optional Pipeline Core configs if we want lints to apply here
 ```
 
-`compose.yaml` declares one service (template-gateway), exposes port 3000, sets Traefik labels for `gateway.genvest.com.au` (and initially `gateway.209.38.27.69.sslip.io`).
+The Coolify app for `gateway-genvest` is configured to:
+
+1. Build source from `leebaroneau/template-gateway` @ `main` (the runtime repo).
+2. Use the Dockerfile at the root of that repo.
+3. Inject brand-specific env (`COMPOSIO_API_KEY`, `BRAND_SLUG=genvest`, `GATEWAY_BEARER`, optional `TOOLKIT_ALLOWLIST`).
+4. Expose port 3000 with Traefik labels for `gateway.genvest.com.au` (and initially `gateway.209.38.27.69.sslip.io`).
+
+`gateway-genvest`'s repo itself only contains documentation + brand-only assets — no compose file, no Dockerfile. The deploy lives in Coolify config.
 
 ## 8. Env contract
 
@@ -136,8 +141,8 @@ This is the gating section. We do NOT touch agent-genvest's overlay until every 
 **Phase A — Prep, no production impact:**
 
 1. Shut down the OLD `gateway-genvest` Coolify app (frees `api.genvest.com.au` and the project slot).
-2. In `leebaroneau/template-gateway`, implement the runtime code + Dockerfile + GHCR build CI. Image lands as `ghcr.io/leebaroneau/template-gateway:sha-XXX` on main merge.
-3. In `genvest/gateway-genvest`, wipe + replace with config-only repo. Coolify app reconfigured to pull the new image, expose at `gateway.209.38.27.69.sslip.io` (sslip.io for now; DNS for `gateway.genvest.com.au` switches later).
+2. In `leebaroneau/template-gateway`, implement the runtime code + Dockerfile. No image registry — Coolify builds from source directly on each deploy.
+3. In `genvest/gateway-genvest`, wipe + replace with thin docs-only repo. Coolify app reconfigured to build from `leebaroneau/template-gateway` @ `main` with brand env, expose at `gateway.209.38.27.69.sslip.io` (sslip.io for now; DNS for `gateway.genvest.com.au` switches later).
 
 **Phase B — Out-of-band validation:**
 
@@ -177,7 +182,7 @@ Each phase is reversible — a revert PR on agent-genvest's overlay returns to t
 - **Composio Tool Router availability.** If their service is down, every brand's chat breaks. Mitigation: keep agent-genvest's 9 direct composio entries in a `legacy/` overlay so we can swap back in under a minute. Add to runbook.
 - **Search-then-execute LLM cost.** Haiku does worse with the indirection. Possible mitigation: SessionPreset.DIRECT_TOOLS mode for specific tools (always-on Outlook + Pipedrive surface), search-then-execute for the long tail. Measure first.
 - **Session leak.** If userId → session cache grows unbounded, memory creeps. Bounded LRU + TTL cleanup.
-- **SDK drift.** `@composio/core` has shown breaking changes (allowedTools-on-update silently dropped). Pin the version; CI smoke-test before image release.
+- **SDK drift.** `@composio/core` has shown breaking changes (allowedTools-on-update silently dropped). Pin the version; smoke-test before each deploy via the validation plan in §9.
 
 ## 12. Approval checkpoint
 
@@ -185,7 +190,7 @@ This is design only. After approval:
 
 1. New issue on `leebaroneau/template-gateway` ("Task: implement runtime gateway per spec").
 2. Branch `task/<#>-runtime-gateway`.
-3. PRs: A) runtime code + Dockerfile + CI, B) tests, C) docs update + README pivot back.
+3. Single PR: runtime code + Dockerfile + tests + docs update + README pivot back. (Initial scope was three smaller PRs; bundled because the tests + docs are tightly coupled to the code.)
 4. Separate issue + PR on `genvest/gateway-genvest` to wipe + reconfigure.
 5. Phase D's `agent-genvest` overlay swap is a third small PR.
 
