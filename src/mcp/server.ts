@@ -17,7 +17,7 @@ interface ToolCapableServer {
 export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
-  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages" | "listEvents" | "graphRequest">;
+  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages" | "listEvents" | "graphRequest" | "sendEmail">;
   enableComposioProviders?: boolean;
   composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
@@ -125,6 +125,27 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
         return toolResult(await options.microsoftProvider!.graphRequest!(actor, input));
       }
     );
+
+    const toolMeta = options.microsoftProvider.listTools();
+    const sendEmailEnabled = toolMeta.some((t) => t.name === "outlook_send_email");
+    if (sendEmailEnabled) {
+      server.tool(
+        "outlook_send_email",
+        "Send an Outlook email as the authenticated gateway actor. Requires Mail.Send. Gated by MICROSOFT_SEND_EMAIL_ENABLED.",
+        {
+          to: z.array(z.string().email()).min(1),
+          subject: z.string().min(1).max(500),
+          body: z.string().min(1).max(100_000),
+          cc: z.array(z.string().email()).optional(),
+          bcc: z.array(z.string().email()).optional()
+        },
+        async (input, extra) => {
+          const actor = actorKeyFromExtra(extra);
+          if (!actor) throw new Error("Missing authenticated gateway actor for outlook_send_email");
+          return toolResult(await options.microsoftProvider!.sendEmail!(actor, input));
+        }
+      );
+    }
   }
 
   if (options.enableComposioProviders && options.composioProvider) {

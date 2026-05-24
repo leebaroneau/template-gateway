@@ -252,6 +252,73 @@ async function setupUnboundService(
 }
 
 // ---------------------------------------------------------------------------
+// sendEmail tests
+// ---------------------------------------------------------------------------
+
+describe("MicrosoftProviderService.sendEmail", () => {
+  it("sends mail when feature flag is on, scope is bound, and Graph returns 202", async () => {
+    let captured: { url: string; body: string } | undefined;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (typeof url === "string" && url === "https://graph.microsoft.com/v1.0/me/sendMail") {
+        captured = { url, body: init?.body as string };
+        return new Response(null, { status: 202 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Send", expiresInSec: 3600 }, fetchImpl);
+    (ctx.service as any).options.config.sendEmailEnabled = true;
+    const result = await ctx.service.sendEmail("bot@example.com", {
+      to: ["lee@example.com"],
+      subject: "Hi",
+      body: "Test"
+    });
+    expect(result.status).toBe(202);
+    expect(captured?.body).toContain("Hi");
+    expect(captured?.body).toContain("lee@example.com");
+    ctx.cleanup();
+  });
+
+  it("rejects when sendEmailEnabled is false", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Send", expiresInSec: 3600 });
+    await expect(ctx.service.sendEmail("bot@example.com", { to: ["x@example.com"], subject: "s", body: "b" }))
+      .rejects.toThrow(/sendEmail.*disabled|MICROSOFT_SEND_EMAIL_ENABLED/);
+    ctx.cleanup();
+  });
+
+  it("rejects when Mail.Send is not bound", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 });
+    (ctx.service as any).options.config.sendEmailEnabled = true;
+    await expect(ctx.service.sendEmail("bot@example.com", { to: ["x@example.com"], subject: "s", body: "b" }))
+      .rejects.toThrow(/Mail\.Send/);
+    ctx.cleanup();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listTools (with sendEmail gate) tests
+// ---------------------------------------------------------------------------
+
+describe("MicrosoftProviderService.listTools (with sendEmail gate)", () => {
+  it("omits outlook_send_email when sendEmailEnabled is false", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    const names = ctx.service.listTools().map((t) => t.name);
+    expect(names).not.toContain("outlook_send_email");
+    ctx.cleanup();
+  });
+
+  it("includes outlook_send_email when sendEmailEnabled is true", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    (ctx.service as any).options.config.sendEmailEnabled = true;
+    const names = ctx.service.listTools().map((t) => t.name);
+    expect(names).toContain("outlook_send_email");
+    const sendTool = ctx.service.listTools().find((t) => t.name === "outlook_send_email");
+    expect(sendTool?.requiredScope).toBe("Mail.Send");
+    expect(sendTool?.readOnly).toBe(false);
+    ctx.cleanup();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // requireValidAccessToken tests
 // ---------------------------------------------------------------------------
 

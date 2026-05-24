@@ -136,11 +136,52 @@ export class MicrosoftProviderService {
   }
 
   listTools(): Array<{ name: string; requiredScope: string; readOnly: boolean }> {
-    return [
+    const base = [
       { name: "outlook_list_messages", requiredScope: "Mail.Read", readOnly: true },
       { name: "calendar_list_events", requiredScope: "Calendars.Read", readOnly: true },
       { name: "graph_request", requiredScope: "User.Read", readOnly: true }
     ];
+    if (this.options.config.sendEmailEnabled) {
+      base.push({ name: "outlook_send_email", requiredScope: "Mail.Send", readOnly: false });
+    }
+    return base;
+  }
+
+  async sendEmail(actorIdOrEmail: string, input: { to: string[]; subject: string; body: string; cc?: string[]; bcc?: string[] }): Promise<{ status: number }> {
+    if (!this.options.config.sendEmailEnabled) {
+      throw new Error("outlook_send_email is disabled (MICROSOFT_SEND_EMAIL_ENABLED=false).");
+    }
+    if (!input.to || input.to.length === 0) {
+      throw new Error("outlook_send_email requires at least one recipient.");
+    }
+    const token = await this.requireValidAccessToken(actorIdOrEmail, "Mail.Send");
+    const message = {
+      message: {
+        subject: input.subject,
+        body: { contentType: "Text", content: input.body },
+        toRecipients: input.to.map((address) => ({ emailAddress: { address } })),
+        ccRecipients: (input.cc ?? []).map((address) => ({ emailAddress: { address } })),
+        bccRecipients: (input.bcc ?? []).map((address) => ({ emailAddress: { address } })),
+        internetMessageHeaders: [
+          { name: "x-template-gateway", value: "microsoft" },
+          { name: "x-template-gateway-actor", value: actorIdOrEmail }
+        ]
+      },
+      saveToSentItems: true
+    };
+    const response = await this.fetchImpl("https://graph.microsoft.com/v1.0/me/sendMail", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token.accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(message)
+    });
+    if (!response.ok && response.status !== 202) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Graph sendMail failed: ${response.status} ${text.slice(0, 200)}`);
+    }
+    return { status: response.status };
   }
 
   async listMessages(
