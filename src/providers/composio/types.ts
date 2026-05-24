@@ -1,6 +1,14 @@
-import type { GatewayConfig } from "../../config.js";
+export type ComposioGatewayProvider = "microsoft-composio" | "google-composio";
 
-export type ComposioGatewayProvider = keyof GatewayConfig["composio"]["providers"];
+/**
+ * Maps a gateway-side Composio slug to the upstream Composio toolkit identifier.
+ * The gateway uses the `-composio` suffix to keep slug uniqueness against native
+ * providers; the Composio API still expects the bare toolkit name.
+ */
+export const COMPOSIO_TOOLKIT_BY_SLUG: Record<ComposioGatewayProvider, "microsoft" | "google"> = {
+  "microsoft-composio": "microsoft",
+  "google-composio": "google"
+};
 export type ComposioBindingStatus = "authorization_required" | "connected" | "disconnected";
 
 export interface ComposioActor {
