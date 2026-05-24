@@ -1,60 +1,71 @@
 # template-gateway
 
-Reference scaffolding for the per-toolkit Composio MCP pattern. Use it when standing up a new brand's Hermes Agent stack that needs to integrate Outlook, OneDrive, Pipedrive, Teams, Zoom, DocuSign, GA4, GSC, Clarity (or any other Composio toolkit) without blowing the LLM's context window.
+Brand-agnostic runtime MCP gateway. Each brand deploys it on Coolify directly from this repo's source (the Dockerfile is small enough that we don't bother with a registry — Coolify builds in seconds on every push) and Hermes points at one URL per brand. Behind the gateway, [Composio Tool Router](https://docs.composio.dev) does the actual tool serving with lazy discovery — the LLM only sees ~5 meta-tools regardless of catalog size.
 
-This repo is not a runtime service. It contains scripts, JSON allowlists, overlay templates, and docs. Brands consume it by cloning, running the scaffold script, and pasting the generated overlay fragment into their own deploy repo.
+Also ships the reference scaffolding (allowlists, helper scripts, overlay templates, walkthroughs) for new-brand onboarding.
 
-> The previous role of this repo — a native-OAuth MCP/HTTP gateway — was archived 2026-05-24 and removed in this PR. If you need to reference the historical native gateway code (PR #5, full Codex security review), check out commit `fd76a91`: `git show fd76a91:src/index.ts` etc.
+> Previously this repo was a native-OAuth proxy; that role is recoverable from git history at commit `fd76a91`. See [`docs/superpowers/specs/2026-05-24-runtime-gateway-design.md`](docs/superpowers/specs/2026-05-24-runtime-gateway-design.md) for the design behind the runtime pivot.
 
 ## What's in here
 
 ```
 template-gateway/
+├── src/                       runtime gateway (Express + thin proxy to Composio Tool Router)
+│   ├── index.ts               Express boot, /health + /mcp routing
+│   ├── config.ts              env loader
+│   ├── auth.ts                bearer middleware + X-Composio-User-Id actor context
+│   ├── session-cache.ts       in-memory LRU + TTL per userId → Tool Router session
+│   └── mcp-proxy.ts           JSON-RPC forwarder
+├── test/                      Vitest unit tests for all of the above
+├── Dockerfile                 multi-stage Node 20, ~120MB final image (Coolify builds from source)
 ├── docs/                      walkthroughs + architecture reference
 │   ├── architecture.md
 │   ├── adding-a-brand.md
 │   ├── adding-a-toolkit.md
 │   └── superpowers/specs/     design history
-├── scripts/                   helpers for Composio MCP server setup
-│   ├── composio-list-tools.mjs    probe a toolkit's full catalog
-│   └── composio-create-servers.mjs  create N MCP servers from N allowlists
-├── allowlists/                reference allowlists per toolkit
-│   ├── outlook-mail-calendar.json
-│   ├── onedrive-files.json
-│   ├── pipedrive-crm.json
-│   ├── teams-messaging.json
-│   ├── zoom-meetings.json
-│   ├── docusign-envelopes.json
-│   ├── ga4-reporting.json
-│   ├── gsc-search.json
-│   └── clarity-export.json
+├── scripts/                   helpers for setup (composio-list-tools, composio-create-servers)
+├── allowlists/                9 reference allowlists per toolkit
 └── overlay-templates/         envsubst templates for brand overlays
-    ├── per-profile-toolkit.yaml
-    └── shared-toolkit.yaml
 ```
 
-## Quick start (new brand)
+## Quick start — running the gateway locally
 
 ```bash
-# 1. clone + install
 git clone https://github.com/leebaroneau/template-gateway.git
 cd template-gateway && npm install
 
-# 2. set Composio API key
 export COMPOSIO_API_KEY="ak_..."
+export BRAND_SLUG="mybrand"
+export GATEWAY_BEARER="$(openssl rand -hex 32)"
+export PORT=3000
 
-# 3. create auth configs in Composio dashboard (UI step — see docs/adding-a-brand.md)
-
-# 4. run the scaffold
-node scripts/composio-create-servers.mjs \
-  --brand mybrand \
-  --allowlists allowlists/outlook-mail-calendar.json,allowlists/ga4-reporting.json \
-  --auth-configs '{"outlook":"ac_abc...","google_analytics":"ac_def..."}' \
-  --shared-entity-toolkits google_analytics \
-  --output ./mybrand-composio.yaml
+npm run dev
+# In another shell:
+curl http://localhost:3000/health
 ```
 
-Output is a YAML fragment ready to paste into your brand's Hermes overlay. Then add a per-profile `COMPOSIO_USER_ID` env sync to your deploy compose (template in [docs/adding-a-brand.md](docs/adding-a-brand.md)).
+To use the gateway from a Hermes profile, add this to the profile's overlay:
+
+```yaml
+mybrand:
+  url: http://localhost:3000/mcp
+  headers:
+    Authorization: "Bearer ${GATEWAY_BEARER}"
+    X-Composio-User-Id: "${COMPOSIO_USER_ID}"
+  timeout: 120
+```
+
+## Env contract
+
+| Var | Required | Meaning |
+|---|---|---|
+| `COMPOSIO_API_KEY` | yes | Org-level Composio API key |
+| `BRAND_SLUG` | yes | e.g. `genvest`; default `user_id` when header missing |
+| `GATEWAY_BEARER` | yes | Shared secret for Hermes ↔ gateway auth (≥16 chars) |
+| `COMPOSIO_PROJECT_ID` | no | Constrain to a specific Composio project |
+| `TOOLKIT_ALLOWLIST` | no | Comma-separated, e.g. `outlook,one_drive,pipedrive` — defaults to all toolkits the API key sees |
+| `PORT` | no | Default `3000` |
+| `SESSION_TTL_SECONDS` | no | Tool Router session cache TTL; default `3600`, min `60` |
 
 ## When to use this repo
 
@@ -62,26 +73,29 @@ Output is a YAML fragment ready to paste into your brand's Hermes overlay. Then 
 |---|---|
 | Setting up a new brand on the agent stack | Yes — start with [docs/adding-a-brand.md](docs/adding-a-brand.md) |
 | Adding a new Composio toolkit to an existing brand | Yes — see [docs/adding-a-toolkit.md](docs/adding-a-toolkit.md) |
-| Composio doesn't have the toolkit you need | No — build it in your brand's deploy repo as a custom MCP server, or open a Composio request |
-| You need a native-OAuth proxy (no Composio dependency) | Maybe — `git show fd76a91:src/` resurrects the historical native gateway code from before this repo's pivot; copy it out and own it in a new repo |
+| Composio doesn't have the toolkit you need | No — build a custom MCP server in your brand's deploy repo, or open a request with Composio |
+| You need a native-OAuth proxy (no Composio dependency) | `git show fd76a91:src/` resurrects the historical native gateway; copy it out and own it in a new repo |
 
 ## The pattern this codifies
 
-- **Per-toolkit Composio Hosted MCP servers** with strict `allowedTools` whitelists. Each toolkit gets one server.
-- **Per-profile entity IDs** for personal toolkits (Outlook, OneDrive, Pipedrive, Teams). Each bot signs in with its own account via in-chat OAuth.
-- **Shared brand entity** (`user_id=<brand-slug>`) for analytics toolkits (GA4, GSC, Clarity). One person signs in once for the brand; every profile reads the same connection.
-- **Persistence via brand overlay + per-profile env sync.** Hermes substitutes `${COMPOSIO_USER_ID}` and `${COMPOSIO_API_KEY}` per-profile at runtime.
+- **Single endpoint per brand.** Hermes mounts ONE `mcp_servers` entry; the gateway fans out to Composio's Tool Router under the hood.
+- **Per-profile entity isolation.** Each Hermes profile carries `X-Composio-User-Id: <profile-slug>` so per-profile OAuth state stays separated.
+- **Shared brand entity for analytics.** Profiles can override the header to `<brand-slug>` for shared OAuth (e.g. GA4 owned by one human).
+- **Lazy tool loading.** Composio Tool Router only surfaces ~5 meta-tools (`search_tools`, `execute_tool`, etc.); tool schemas are fetched on demand.
+- **Brand chokepoint.** Gateway is a natural seam for future audit logging, rate limiting, role-based filtering, or custom composite tools.
 
-See [docs/architecture.md](docs/architecture.md) for the full picture.
+See [docs/architecture.md](docs/architecture.md) for the full picture and [docs/superpowers/specs/2026-05-24-runtime-gateway-design.md](docs/superpowers/specs/2026-05-24-runtime-gateway-design.md) for the design that drove this.
 
 ## Status
 
 | Component | State |
 |---|---|
+| Runtime gateway (Express + proxy + cache + auth) | ready |
 | Allowlists (9 reference toolkits) | ready |
+| `composio-list-tools.mjs` / `composio-create-servers.mjs` | ready |
 | Overlay templates | ready |
-| `composio-list-tools.mjs` | ready |
-| `composio-create-servers.mjs` | ready |
+| Dockerfile (Coolify builds from source on push) | ready |
+| Vitest unit tests | 21/21 pass |
 | `composio-rotate-key.mjs` (lifecycle) | planned |
-| CI for scaffold script | planned |
-| First production use | Genvest (2026-05-24) |
+| Audit log persistence | planned |
+| First production deploy (`gateway-genvest` → `gateway.genvest.com.au`) | in progress |
