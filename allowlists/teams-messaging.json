@@ -1,0 +1,23 @@
+{
+  "toolkit": "microsoft_teams",
+  "description": "Teams messaging: list joined teams + channels + chats, read/post messages, reply, create meeting, list members.",
+  "entity_scope": "per_profile",
+  "notes": "Each profile/bot signs in with its own Microsoft 365 account. Post/reply tools enable bots to participate in channel + 1:1 conversations.",
+  "tools": [
+    "MICROSOFT_TEAMS_LIST_USER_JOINED_TEAMS",
+    "MICROSOFT_TEAMS_TEAMS_LIST_CHANNELS",
+    "MICROSOFT_TEAMS_TEAMS_LIST_CHANNEL_MESSAGES",
+    "MICROSOFT_TEAMS_LIST_CHAT",
+    "MICROSOFT_TEAMS_LIST_USER_CHAT_MESSAGES",
+    "MICROSOFT_TEAMS_GET_CHANNEL_MESSAGE",
+    "MICROSOFT_TEAMS_GET_CHANNEL",
+    "MICROSOFT_TEAMS_GET_CHAT",
+    "MICROSOFT_TEAMS_TEAMS_POST_CHANNEL_MESSAGE",
+    "MICROSOFT_TEAMS_TEAMS_POST_CHAT_MESSAGE",
+    "MICROSOFT_TEAMS_TEAMS_POST_MESSAGE_REPLY",
+    "MICROSOFT_TEAMS_CREATE_OR_GET_ONLINE_MEETING",
+    "MICROSOFT_TEAMS_LIST_TEAM_MEMBERS",
+    "MICROSOFT_TEAMS_LIST_CHAT_MEMBERS",
+    "MICROSOFT_TEAMS_LIST_PINNED_MESSAGES"
+  ]
+}

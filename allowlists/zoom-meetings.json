@@ -1,0 +1,18 @@
+{
+  "toolkit": "zoom",
+  "description": "Zoom meetings + recordings: list + CRUD meetings, fetch meeting summary (AI), list recordings, list past meeting instances.",
+  "entity_scope": "per_profile",
+  "notes": "Each profile/bot signs in with its own Zoom account. Includes the AI-generated meeting summary tool (useful for post-meeting recap).",
+  "tools": [
+    "ZOOM_GET_USER",
+    "ZOOM_LIST_MEETINGS",
+    "ZOOM_GET_A_MEETING",
+    "ZOOM_CREATE_A_MEETING",
+    "ZOOM_UPDATE_A_MEETING",
+    "ZOOM_DELETE_A_MEETING",
+    "ZOOM_GET_A_MEETING_SUMMARY",
+    "ZOOM_LIST_ALL_RECORDINGS",
+    "ZOOM_GET_MEETING_RECORDINGS",
+    "ZOOM_LIST_PAST_MEETING_INSTANCES"
+  ]
+}

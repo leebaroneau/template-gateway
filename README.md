@@ -1,10 +1,10 @@
 # template-gateway
 
-Reference scaffolding for the per-toolkit Composio MCP pattern. Use it when standing up a new brand's Hermes Agent stack that needs to integrate Outlook, OneDrive, Pipedrive, GA4, GSC, Clarity, Teams (or any other Composio toolkit) without blowing the LLM's context window.
+Reference scaffolding for the per-toolkit Composio MCP pattern. Use it when standing up a new brand's Hermes Agent stack that needs to integrate Outlook, OneDrive, Pipedrive, Teams, Zoom, DocuSign, GA4, GSC, Clarity (or any other Composio toolkit) without blowing the LLM's context window.
 
 This repo is not a runtime service. It contains scripts, JSON allowlists, overlay templates, and docs. Brands consume it by cloning, running the scaffold script, and pasting the generated overlay fragment into their own deploy repo.
 
-> The previous role of this repo — a native-OAuth MCP/HTTP gateway — is archived in [`legacy/`](legacy/). See [legacy/README.md](legacy/README.md) for context. Don't extend it.
+> The previous role of this repo — a native-OAuth MCP/HTTP gateway — was archived 2026-05-24 and removed in this PR. If you need to reference the historical native gateway code (PR #5, full Codex security review), check out commit `fd76a91`: `git show fd76a91:src/index.ts` etc.
 
 ## What's in here
 
@@ -22,13 +22,15 @@ template-gateway/
 │   ├── outlook-mail-calendar.json
 │   ├── onedrive-files.json
 │   ├── pipedrive-crm.json
+│   ├── teams-messaging.json
+│   ├── zoom-meetings.json
+│   ├── docusign-envelopes.json
 │   ├── ga4-reporting.json
 │   ├── gsc-search.json
 │   └── clarity-export.json
-├── overlay-templates/         envsubst templates for brand overlays
-│   ├── per-profile-toolkit.yaml
-│   └── shared-toolkit.yaml
-└── legacy/                    pre-pivot native-OAuth gateway code
+└── overlay-templates/         envsubst templates for brand overlays
+    ├── per-profile-toolkit.yaml
+    └── shared-toolkit.yaml
 ```
 
 ## Quick start (new brand)
@@ -61,7 +63,7 @@ Output is a YAML fragment ready to paste into your brand's Hermes overlay. Then 
 | Setting up a new brand on the agent stack | Yes — start with [docs/adding-a-brand.md](docs/adding-a-brand.md) |
 | Adding a new Composio toolkit to an existing brand | Yes — see [docs/adding-a-toolkit.md](docs/adding-a-toolkit.md) |
 | Composio doesn't have the toolkit you need | No — build it in your brand's deploy repo as a custom MCP server, or open a Composio request |
-| You need a native-OAuth proxy (no Composio dependency) | Maybe — review [`legacy/`](legacy/) as a starting point, but copy it out and own it |
+| You need a native-OAuth proxy (no Composio dependency) | Maybe — `git show fd76a91:src/` resurrects the historical native gateway code from before this repo's pivot; copy it out and own it in a new repo |
 
 ## The pattern this codifies
 
@@ -76,7 +78,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture.
 
 | Component | State |
 |---|---|
-| Allowlists (6 reference toolkits) | ready |
+| Allowlists (9 reference toolkits) | ready |
 | Overlay templates | ready |
 | `composio-list-tools.mjs` | ready |
 | `composio-create-servers.mjs` | ready |
