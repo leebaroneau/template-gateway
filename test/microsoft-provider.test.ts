@@ -589,3 +589,99 @@ function jsonResponse(body: unknown): Response {
     text: async () => JSON.stringify(body)
   } as Response;
 }
+
+// ---------------------------------------------------------------------------
+// MicrosoftProviderService audit tests
+// ---------------------------------------------------------------------------
+
+async function setupBoundServiceWithAudit(
+  opts: Parameters<typeof setupBoundService>[0],
+  fetchImpl: typeof fetch | undefined,
+  audit: (entry: Record<string, unknown>) => void
+) {
+  const ctx = await setupBoundService(opts, fetchImpl ?? (vi.fn() as any));
+  (ctx.service as any).options.audit = audit;
+  return ctx;
+}
+
+describe("MicrosoftProviderService audit", () => {
+  it("emits an audit entry with status ok on successful tool call", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (url: string) => {
+      if (typeof url === "string" && url.startsWith("https://graph.microsoft.com/v1.0/me/messages")) {
+        return new Response(JSON.stringify({ value: [], "@odata.nextLink": null }), { status: 200 });
+      }
+      throw new Error(`Unexpected: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 }, fetchImpl, (entry) => audits.push(entry));
+    await ctx.service.listMessages("bot@example.com", { top: 5 });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      provider: "microsoft",
+      tool: "outlook_list_messages",
+      status: "ok",
+      requiredScope: "Mail.Read",
+      method: "GET",
+      path: "/me/messages",
+      actor: "bot@example.com"
+    });
+    expect(typeof audits[0].durationMs).toBe("number");
+    ctx.cleanup();
+  });
+
+  it("emits audit with status denied when required scope is missing", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const ctx = await setupBoundServiceWithAudit({ scope: "offline_access User.Read", expiresInSec: 3600 }, undefined, (entry) => audits.push(entry));
+    await expect(ctx.service.listMessages("bot@example.com", {})).rejects.toThrow();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      provider: "microsoft",
+      tool: "outlook_list_messages",
+      status: "denied",
+      requiredScope: "Mail.Read"
+    });
+    expect(typeof (audits[0] as any).error).toBe("string");
+    ctx.cleanup();
+  });
+
+  it("emits audit with status reconnect_required on invalid_grant", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async () => new Response(
+      JSON.stringify({ error: "invalid_grant", error_description: "refresh token expired" }),
+      { status: 400 }
+    )) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit({ scope: "offline_access User.Read Mail.Read", expiresInSec: -1 }, fetchImpl, (entry) => audits.push(entry));
+    await expect(ctx.service.listMessages("bot@example.com", {})).rejects.toThrow();
+    expect(audits[0]).toMatchObject({
+      provider: "microsoft",
+      tool: "outlook_list_messages",
+      status: "reconnect_required"
+    });
+    ctx.cleanup();
+  });
+
+  it("includes subjectHash, recipientCount, attachmentCount for sendEmail audits (privacy)", async () => {
+    const audits: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (url: string) => {
+      if (typeof url === "string" && url === "https://graph.microsoft.com/v1.0/me/sendMail") {
+        return new Response(null, { status: 202 });
+      }
+      throw new Error(`Unexpected: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundServiceWithAudit({ scope: "offline_access User.Read Mail.Send", expiresInSec: 3600 }, fetchImpl, (entry) => audits.push(entry));
+    (ctx.service as any).options.config.sendEmailEnabled = true;
+    await ctx.service.sendEmail("bot@example.com", { to: ["a@x.com", "b@x.com"], cc: ["c@x.com"], subject: "Hello world", body: "test" });
+    expect(audits).toHaveLength(1);
+    const entry = audits[0] as any;
+    expect(entry.tool).toBe("outlook_send_email");
+    expect(entry.status).toBe("ok");
+    expect(typeof entry.subjectHash).toBe("string");
+    expect(entry.subjectHash).toHaveLength(16);
+    expect(entry.recipientCount).toBe(3);
+    expect(entry.attachmentCount).toBe(0);
+    // subject body should NOT appear in audit
+    expect(JSON.stringify(entry)).not.toContain("Hello world");
+    expect(JSON.stringify(entry)).not.toContain("test");
+    ctx.cleanup();
+  });
+});

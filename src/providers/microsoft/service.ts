@@ -1,12 +1,31 @@
+import { createHash } from "node:crypto";
 import type { MicrosoftOAuthStateStore } from "./state-store.js";
 import type { MicrosoftTokenStore } from "./token-store.js";
 import type { MicrosoftActor, MicrosoftProviderConfig, MicrosoftStatus } from "./types.js";
+
+interface MicrosoftAuditEntry {
+  provider: "microsoft";
+  tool: string;
+  actor: string;
+  requiredScope: string;
+  status: "ok" | "denied" | "reconnect_required" | "error";
+  method?: string;
+  path?: string;
+  durationMs: number;
+  upstreamRequestId?: string;
+  error?: string;
+  // sendEmail privacy fields
+  subjectHash?: string;
+  recipientCount?: number;
+  attachmentCount?: number;
+}
 
 interface MicrosoftProviderServiceOptions {
   config: MicrosoftProviderConfig;
   stateStore: MicrosoftOAuthStateStore;
   tokenStore: MicrosoftTokenStore;
   fetch?: typeof fetch;
+  audit?: (entry: MicrosoftAuditEntry) => void | Promise<void>;
 }
 
 interface ConnectUrlResult {
@@ -148,108 +167,127 @@ export class MicrosoftProviderService {
   }
 
   async sendEmail(actorIdOrEmail: string, input: { to: string[]; subject: string; body: string; cc?: string[]; bcc?: string[] }): Promise<{ status: number }> {
-    if (!this.options.config.sendEmailEnabled) {
-      throw new Error("outlook_send_email is disabled (MICROSOFT_SEND_EMAIL_ENABLED=false).");
-    }
-    if (!input.to || input.to.length === 0) {
-      throw new Error("outlook_send_email requires at least one recipient.");
-    }
-    const token = await this.requireValidAccessToken(actorIdOrEmail, "Mail.Send");
-    const message = {
-      message: {
-        subject: input.subject,
-        body: { contentType: "Text", content: input.body },
-        toRecipients: input.to.map((address) => ({ emailAddress: { address } })),
-        ccRecipients: (input.cc ?? []).map((address) => ({ emailAddress: { address } })),
-        bccRecipients: (input.bcc ?? []).map((address) => ({ emailAddress: { address } })),
-        internetMessageHeaders: [
-          { name: "x-template-gateway", value: "microsoft" },
-          { name: "x-template-gateway-actor", value: actorIdOrEmail }
-        ]
-      },
-      saveToSentItems: true
-    };
-    const response = await this.fetchImpl("https://graph.microsoft.com/v1.0/me/sendMail", {
+    const subjectHash = createHash("sha256").update(input.subject ?? "").digest("hex").slice(0, 16);
+    const recipientCount = (input.to?.length ?? 0) + (input.cc?.length ?? 0) + (input.bcc?.length ?? 0);
+    const attachmentCount = 0; // v1: no attachments accepted
+    return this.runTool(actorIdOrEmail, {
+      tool: "outlook_send_email",
+      requiredScope: "Mail.Send",
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token.accessToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(message)
+      path: "/me/sendMail",
+      subjectHash,
+      recipientCount,
+      attachmentCount
+    }, async () => {
+      if (!this.options.config.sendEmailEnabled) {
+        throw new Error("outlook_send_email is disabled (MICROSOFT_SEND_EMAIL_ENABLED=false).");
+      }
+      if (!input.to || input.to.length === 0) {
+        throw new Error("outlook_send_email requires at least one recipient.");
+      }
+      const token = await this.requireValidAccessToken(actorIdOrEmail, "Mail.Send");
+      const message = {
+        message: {
+          subject: input.subject,
+          body: { contentType: "Text", content: input.body },
+          toRecipients: input.to.map((address) => ({ emailAddress: { address } })),
+          ccRecipients: (input.cc ?? []).map((address) => ({ emailAddress: { address } })),
+          bccRecipients: (input.bcc ?? []).map((address) => ({ emailAddress: { address } })),
+          internetMessageHeaders: [
+            { name: "x-template-gateway", value: "microsoft" },
+            { name: "x-template-gateway-actor", value: actorIdOrEmail }
+          ]
+        },
+        saveToSentItems: true
+      };
+      const response = await this.fetchImpl("https://graph.microsoft.com/v1.0/me/sendMail", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token.accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(message)
+      });
+      if (!response.ok && response.status !== 202) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`Graph sendMail failed: ${response.status} ${text.slice(0, 200)}`);
+      }
+      return { status: response.status };
     });
-    if (!response.ok && response.status !== 202) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`Graph sendMail failed: ${response.status} ${text.slice(0, 200)}`);
-    }
-    return { status: response.status };
   }
 
   async listMessages(
     actorIdOrEmail: string,
     options: { top?: number; query?: string; skip?: number }
   ): Promise<{ messages: unknown[]; nextLink?: string | null }> {
-    const token = await this.requireValidAccessToken(actorIdOrEmail, "Mail.Read");
-    const params: string[] = [];
-    if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
-    if (options.skip !== undefined) params.push(`$skip=${encodeURIComponent(String(options.skip))}`);
-    if (options.query) params.push(`$search=${encodeURIComponent(`"${options.query}"`)}`);
-    const queryString = params.length > 0 ? `?${params.join("&")}` : "";
-    const requestUrl = `https://graph.microsoft.com/v1.0/me/messages${queryString}`;
-    const response = await this.fetchImpl(requestUrl, {
-      headers: { Authorization: `Bearer ${token.accessToken}` }
+    return this.runTool(actorIdOrEmail, { tool: "outlook_list_messages", requiredScope: "Mail.Read", method: "GET", path: "/me/messages" }, async () => {
+      const token = await this.requireValidAccessToken(actorIdOrEmail, "Mail.Read");
+      const params: string[] = [];
+      if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
+      if (options.skip !== undefined) params.push(`$skip=${encodeURIComponent(String(options.skip))}`);
+      if (options.query) params.push(`$search=${encodeURIComponent(`"${options.query}"`)}`);
+      const queryString = params.length > 0 ? `?${params.join("&")}` : "";
+      const requestUrl = `https://graph.microsoft.com/v1.0/me/messages${queryString}`;
+      const response = await this.fetchImpl(requestUrl, {
+        headers: { Authorization: `Bearer ${token.accessToken}` }
+      });
+      const payload = await response.json() as { value?: unknown[]; "@odata.nextLink"?: string };
+      if (!response.ok) {
+        throw new Error(`Graph listMessages failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
+      }
+      return {
+        messages: payload.value ?? [],
+        nextLink: payload["@odata.nextLink"] ?? null
+      };
     });
-    const payload = await response.json() as { value?: unknown[]; "@odata.nextLink"?: string };
-    if (!response.ok) {
-      throw new Error(`Graph listMessages failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
-    }
-    return {
-      messages: payload.value ?? [],
-      nextLink: payload["@odata.nextLink"] ?? null
-    };
   }
 
   async listEvents(
     actorIdOrEmail: string,
     options: { top?: number; skip?: number; timeMin?: string; timeMax?: string }
   ): Promise<{ events: unknown[]; nextLink?: string | null }> {
-    const token = await this.requireValidAccessToken(actorIdOrEmail, "Calendars.Read");
-    const params: string[] = [];
-    if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
-    if (options.skip !== undefined) params.push(`$skip=${encodeURIComponent(String(options.skip))}`);
-    const filterParts: string[] = [];
-    if (options.timeMin) filterParts.push(`start/dateTime ge '${options.timeMin}'`);
-    if (options.timeMax) filterParts.push(`end/dateTime le '${options.timeMax}'`);
-    if (filterParts.length > 0) params.push(`$filter=${encodeURIComponent(filterParts.join(" and "))}`);
-    const queryString = params.length > 0 ? `?${params.join("&")}` : "";
-    const requestUrl = `https://graph.microsoft.com/v1.0/me/calendar/events${queryString}`;
-    const response = await this.fetchImpl(requestUrl, {
-      headers: { Authorization: `Bearer ${token.accessToken}` }
+    return this.runTool(actorIdOrEmail, { tool: "calendar_list_events", requiredScope: "Calendars.Read", method: "GET", path: "/me/calendar/events" }, async () => {
+      const token = await this.requireValidAccessToken(actorIdOrEmail, "Calendars.Read");
+      const params: string[] = [];
+      if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
+      if (options.skip !== undefined) params.push(`$skip=${encodeURIComponent(String(options.skip))}`);
+      const filterParts: string[] = [];
+      if (options.timeMin) filterParts.push(`start/dateTime ge '${options.timeMin}'`);
+      if (options.timeMax) filterParts.push(`end/dateTime le '${options.timeMax}'`);
+      if (filterParts.length > 0) params.push(`$filter=${encodeURIComponent(filterParts.join(" and "))}`);
+      const queryString = params.length > 0 ? `?${params.join("&")}` : "";
+      const requestUrl = `https://graph.microsoft.com/v1.0/me/calendar/events${queryString}`;
+      const response = await this.fetchImpl(requestUrl, {
+        headers: { Authorization: `Bearer ${token.accessToken}` }
+      });
+      const payload = await response.json() as { value?: unknown[]; "@odata.nextLink"?: string };
+      if (!response.ok) {
+        throw new Error(`Graph listEvents failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
+      }
+      return {
+        events: payload.value ?? [],
+        nextLink: payload["@odata.nextLink"] ?? null
+      };
     });
-    const payload = await response.json() as { value?: unknown[]; "@odata.nextLink"?: string };
-    if (!response.ok) {
-      throw new Error(`Graph listEvents failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
-    }
-    return {
-      events: payload.value ?? [],
-      nextLink: payload["@odata.nextLink"] ?? null
-    };
   }
 
   async graphRequest(
     actorIdOrEmail: string,
     input: { method: "GET"; path: string }
   ): Promise<{ status: number; body: unknown }> {
-    if (input.method !== "GET") {
-      throw new Error(`graph_request method not allowed: ${input.method}. GET only.`);
-    }
-    this.assertAllowedGraphPath(input.path);
-    const token = await this.requireValidAccessToken(actorIdOrEmail, "User.Read");
-    const url = `https://graph.microsoft.com/v1.0${input.path}`;
-    const response = await this.fetchImpl(url, {
-      headers: { Authorization: `Bearer ${token.accessToken}` }
+    return this.runTool(actorIdOrEmail, { tool: "graph_request", requiredScope: "User.Read", method: input.method, path: input.path }, async () => {
+      if (input.method !== "GET") {
+        throw new Error(`graph_request method not allowed: ${input.method}. GET only.`);
+      }
+      this.assertAllowedGraphPath(input.path);
+      const token = await this.requireValidAccessToken(actorIdOrEmail, "User.Read");
+      const url = `https://graph.microsoft.com/v1.0${input.path}`;
+      const response = await this.fetchImpl(url, {
+        headers: { Authorization: `Bearer ${token.accessToken}` }
+      });
+      const body = await response.json().catch(() => null);
+      return { status: response.status, body };
     });
-    const body = await response.json().catch(() => null);
-    return { status: response.status, body };
   }
 
   private assertAllowedGraphPath(path: string): void {
@@ -392,6 +430,32 @@ export class MicrosoftProviderService {
       throw new Error(payload.error?.message || "Microsoft profile lookup failed.");
     }
     return payload;
+  }
+
+  private async runTool<T>(
+    actorIdOrEmail: string,
+    params: { tool: string; requiredScope: string; method?: string; path?: string; subjectHash?: string; recipientCount?: number; attachmentCount?: number },
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const start = Date.now();
+    try {
+      const result = await fn();
+      void this.emitAudit({ ...params, actor: actorIdOrEmail, status: "ok", durationMs: Date.now() - start });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status: "denied" | "reconnect_required" | "error" =
+        /required scope/i.test(message) ? "denied"
+        : /reconnect_required/i.test(message) ? "reconnect_required"
+        : "error";
+      void this.emitAudit({ ...params, actor: actorIdOrEmail, status, durationMs: Date.now() - start, error: message });
+      throw error;
+    }
+  }
+
+  private async emitAudit(entry: Omit<MicrosoftAuditEntry, "provider">): Promise<void> {
+    if (!this.options.audit) return;
+    await this.options.audit({ provider: "microsoft", ...entry });
   }
 
   private assertConfigured(): void {
