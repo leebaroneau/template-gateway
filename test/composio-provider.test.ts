@@ -26,14 +26,14 @@ describe("Composio provider", () => {
     try {
       const service = createService(tempDir, client);
 
-      const result = await service.createConnectUrl("microsoft", {
+      const result = await service.createConnectUrl("microsoft-composio", {
         actorId: "genvest-head-of-sales",
         actorEmail: "Sales_Bot@Genvest.com.au",
         actorName: "@sales_bot"
       });
 
       expect(result).toMatchObject({
-        provider: "microsoft",
+        provider: "microsoft-composio",
         backend: "composio",
         status: "authorization_required",
         authorizeUrl: "https://connect.composio.dev/link/ln_123",
@@ -53,8 +53,8 @@ describe("Composio provider", () => {
         callbackUrl: undefined
       });
 
-      await expect(service.status("microsoft", "genvest-head-of-sales")).resolves.toMatchObject({
-        provider: "microsoft",
+      await expect(service.status("microsoft-composio", "genvest-head-of-sales")).resolves.toMatchObject({
+        provider: "microsoft-composio",
         backend: "composio",
         status: "authorization_required",
         actorId: "genvest-head-of-sales",
@@ -77,19 +77,19 @@ describe("Composio provider", () => {
     try {
       const service = createService(tempDir, client);
 
-      await expect(service.refreshStatus("google", {
+      await expect(service.refreshStatus("google-composio", {
         actorId: "lee",
         actorEmail: "lee@genvest.com.au"
       })).resolves.toMatchObject({
-        provider: "google",
+        provider: "google-composio",
         status: "connected",
         connectedAccountIds: ["ca_gmail_1"]
       });
 
-      const mcp = await service.mcpUrl("google", "lee");
+      const mcp = await service.mcpUrl("google-composio", "lee");
 
       expect(mcp).toMatchObject({
-        provider: "google",
+        provider: "google-composio",
         status: "connected",
         connectedAccountId: "ca_gmail_1",
         mcpUrl: "https://platform.composio.dev/v3/mcp/mcp_123?connected_account_id=ca_gmail_1"
