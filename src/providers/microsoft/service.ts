@@ -143,6 +143,30 @@ export class MicrosoftProviderService {
     ];
   }
 
+  async listMessages(
+    actorIdOrEmail: string,
+    options: { top?: number; query?: string; skip?: number }
+  ): Promise<{ messages: unknown[]; nextLink?: string | null }> {
+    const token = await this.requireValidAccessToken(actorIdOrEmail, "Mail.Read");
+    const params: string[] = [];
+    if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
+    if (options.skip !== undefined) params.push(`$skip=${encodeURIComponent(String(options.skip))}`);
+    if (options.query) params.push(`$search=${encodeURIComponent(`"${options.query}"`)}`);
+    const queryString = params.length > 0 ? `?${params.join("&")}` : "";
+    const requestUrl = `https://graph.microsoft.com/v1.0/me/messages${queryString}`;
+    const response = await this.fetchImpl(requestUrl, {
+      headers: { Authorization: `Bearer ${token.accessToken}` }
+    });
+    const payload = await response.json() as { value?: unknown[]; "@odata.nextLink"?: string };
+    if (!response.ok) {
+      throw new Error(`Graph listMessages failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
+    }
+    return {
+      messages: payload.value ?? [],
+      nextLink: payload["@odata.nextLink"] ?? null
+    };
+  }
+
   async requireValidAccessToken(actorIdOrEmail: string, requiredScope: string): Promise<ValidAccessToken> {
     const loaded = await this.options.tokenStore.loadBinding(actorIdOrEmail);
     if (!loaded) {

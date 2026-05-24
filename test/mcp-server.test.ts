@@ -45,7 +45,8 @@ describe("createGatewayMcpServer", () => {
         }),
         listTools: () => [
           { name: "outlook_list_messages", requiredScope: "Mail.Read", readOnly: true }
-        ]
+        ],
+        listMessages: async () => ({ messages: [], nextLink: null })
       }
     });
 
@@ -53,7 +54,8 @@ describe("createGatewayMcpServer", () => {
       "gateway_whoami",
       "gateway_list_providers",
       "microsoft_status",
-      "microsoft_list_tools"
+      "microsoft_list_tools",
+      "outlook_list_messages"
     ]);
 
     const status = await fakeServer.tools.microsoft_status.handler({}, {
@@ -128,6 +130,22 @@ function createFakeServer() {
     }
   };
 }
+
+describe("MCP — outlook_list_messages", () => {
+  it("is registered when microsoftProvider has listMessages", () => {
+    const server = createFakeServer();
+    createGatewayMcpServer(server, {
+      providers: createProviderRegistry([]),
+      apiBaseUrl: "http://localhost:3000",
+      microsoftProvider: {
+        status: async () => ({ provider: "microsoft", status: "connected", actorId: "x", scopes: [] }),
+        listTools: () => [],
+        listMessages: async () => ({ messages: [], nextLink: null })
+      } as any
+    });
+    expect(server.toolNames()).toContain("outlook_list_messages");
+  });
+});
 
 describe("MCP — composio tools are flag-gated", () => {
   it("does not register provider_connect/status/mcp_url when enableComposioProviders is false", async () => {

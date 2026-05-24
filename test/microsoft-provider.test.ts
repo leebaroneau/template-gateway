@@ -350,6 +350,40 @@ describe("MicrosoftProviderService.requireValidAccessToken", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// listMessages tests
+// ---------------------------------------------------------------------------
+
+describe("MicrosoftProviderService.listMessages", () => {
+  it("returns Graph messages page for a connected actor", async () => {
+    const captured: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      captured.push(url);
+      if (typeof url === "string" && url.startsWith("https://graph.microsoft.com/v1.0/me/messages")) {
+        const headers = init?.headers as Record<string, string>;
+        expect(headers.Authorization).toBe("Bearer bound-access-token");
+        return new Response(JSON.stringify({
+          value: [{ id: "AAA", subject: "Hello", from: { emailAddress: { address: "x@example.com" } } }],
+          "@odata.nextLink": null
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 }, fetchImpl);
+    const result = await ctx.service.listMessages("bot@example.com", { top: 5, query: "from:x@example.com" });
+    expect((result.messages[0] as { id: string }).id).toBe("AAA");
+    expect(captured[0]).toContain("$top=5");
+    expect(captured[0]).toContain("$search=");
+    ctx.cleanup();
+  });
+
+  it("rejects when Mail.Read is not bound", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(ctx.service.listMessages("bot@example.com", {})).rejects.toThrow(/Mail\.Read/);
+    ctx.cleanup();
+  });
+});
+
 function jsonResponse(body: unknown): Response {
   return {
     ok: true,

@@ -17,7 +17,7 @@ interface ToolCapableServer {
 export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
-  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools">;
+  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages">;
   enableComposioProviders?: boolean;
   composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
@@ -74,6 +74,21 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
         provider: "microsoft",
         tools: options.microsoftProvider!.listTools()
       })
+    );
+
+    server.tool(
+      "outlook_list_messages",
+      "List Outlook messages for the authenticated gateway actor. Requires Mail.Read.",
+      {
+        top: z.number().int().min(1).max(100).optional(),
+        skip: z.number().int().min(0).optional(),
+        query: z.string().min(1).max(500).optional()
+      },
+      async (input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) throw new Error("Missing authenticated gateway actor for outlook_list_messages");
+        return toolResult(await options.microsoftProvider!.listMessages!(actor, input));
+      }
     );
   }
 
