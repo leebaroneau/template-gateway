@@ -149,3 +149,39 @@ describe("loadConfig — ENABLE_COMPOSIO_PROVIDERS flag", () => {
     })).toThrow(/Expected boolean/);
   });
 });
+
+describe("loadConfig — composio block", () => {
+  it("does not parse composio config when flag is off", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com"
+    });
+    expect(config.composio).toBeUndefined();
+  });
+
+  it("parses composio config when flag is on", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "true",
+      COMPOSIO_API_KEY: "ck_test",
+      COMPOSIO_CLIENT_SLUG: "test-client"
+    });
+    expect(config.composio).toBeDefined();
+    expect(config.composio?.apiKey).toBe("ck_test");
+    expect(config.composio?.clientSlug).toBe("test-client");
+    expect(config.composio?.bindingStorePath).toBe("./data/composio-bindings.json");
+    expect(config.composio?.providers.microsoft.toolkits).toEqual(["outlook", "calendar", "onedrive"]);
+    expect(config.composio?.providers.google.toolkits).toEqual(["gmail", "googlecalendar", "googledrive"]);
+    expect(config.composio?.authConfigs).toEqual({});
+  });
+
+  it("rejects auth config map values that are not non-empty strings", () => {
+    expect(() => loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "true",
+      COMPOSIO_AUTH_CONFIGS_JSON: '{"microsoft-composio": ""}'
+    })).toThrow(/non-empty string auth config id/);
+  });
+});

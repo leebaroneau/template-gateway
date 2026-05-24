@@ -31,7 +31,23 @@ const configSchema = z.object({
     scopes: z.array(z.string().min(1)),
     authorizeUrl: z.string().url(),
     tokenUrl: z.string().url()
-  })
+  }),
+  composio: z.object({
+    apiKey: z.string().min(1).optional(),
+    bindingStorePath: z.string().min(1),
+    clientSlug: z.string().min(1),
+    authConfigs: z.record(z.string().min(1)),
+    providers: z.object({
+      microsoft: z.object({
+        toolkits: z.array(z.string().min(1)).min(1),
+        primaryToolkit: z.string().min(1)
+      }),
+      google: z.object({
+        toolkits: z.array(z.string().min(1)).min(1),
+        primaryToolkit: z.string().min(1)
+      })
+    })
+  }).optional()
 });
 
 export type GatewayConfig = z.infer<typeof configSchema>;
@@ -40,6 +56,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const apiBaseUrl = env.API_BASE_URL ?? "http://localhost:3000";
   const allowedEmailDomains = splitCsv(env.ALLOWED_EMAIL_DOMAINS ?? "example.com");
   const microsoftTenantId = optionalString(env.MICROSOFT_TENANT_ID);
+  const enableComposio = parseBoolean(env.ENABLE_COMPOSIO_PROVIDERS, false);
+  const microsoftToolkits = splitCsv(env.COMPOSIO_MICROSOFT_TOOLKITS ?? "outlook,calendar,onedrive");
+  const googleToolkits = splitCsv(env.COMPOSIO_GOOGLE_TOOLKITS ?? "gmail,googlecalendar,googledrive");
 
   return configSchema.parse({
     port: parseInteger(env.PORT, 3000),
@@ -48,8 +67,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     tokenStorePath: env.TOKEN_STORE_PATH ?? "./data/tokens.json",
     auditLogPath: env.AUDIT_LOG_PATH ?? "./data/audit.jsonl",
     apiBearerTokens: splitCsv(env.API_BEARER_TOKENS ?? ""),
-    enableComposioProviders: parseBoolean(env.ENABLE_COMPOSIO_PROVIDERS, false),
+    enableComposioProviders: enableComposio,
     enabledProviders: splitCsv(env.ENABLED_PROVIDERS ?? "microsoft"),
+    composio: enableComposio ? {
+      apiKey: optionalString(env.COMPOSIO_API_KEY),
+      bindingStorePath: env.COMPOSIO_BINDING_STORE_PATH ?? "./data/composio-bindings.json",
+      clientSlug: optionalString(env.COMPOSIO_CLIENT_SLUG) ?? "local",
+      authConfigs: parseJsonRecord(env.COMPOSIO_AUTH_CONFIGS_JSON ?? "{}"),
+      providers: {
+        microsoft: {
+          toolkits: microsoftToolkits,
+          primaryToolkit: optionalString(env.COMPOSIO_MICROSOFT_PRIMARY_TOOLKIT) ?? microsoftToolkits[0]
+        },
+        google: {
+          toolkits: googleToolkits,
+          primaryToolkit: optionalString(env.COMPOSIO_GOOGLE_PRIMARY_TOOLKIT) ?? googleToolkits[0]
+        }
+      }
+    } : undefined,
     microsoft: {
       clientId: optionalString(env.MICROSOFT_CLIENT_ID),
       clientSecret: optionalString(env.MICROSOFT_CLIENT_SECRET),
@@ -109,4 +144,19 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   throw new Error(`Expected boolean value, received: ${value}`);
+}
+
+function parseJsonRecord(value: string): Record<string, string> {
+  const parsed = JSON.parse(value) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected JSON object for auth config mapping.");
+  }
+  const output: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(parsed)) {
+    if (typeof raw !== "string" || !raw.trim()) {
+      throw new Error(`Expected non-empty string auth config id for toolkit: ${key}`);
+    }
+    output[key.trim()] = raw.trim();
+  }
+  return output;
 }
