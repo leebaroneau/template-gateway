@@ -440,7 +440,10 @@ export class MicrosoftProviderService {
     const start = Date.now();
     try {
       const result = await fn();
-      void this.emitAudit({ ...params, actor: actorIdOrEmail, status: "ok", durationMs: Date.now() - start });
+      void this.emitAudit({ ...params, actor: actorIdOrEmail, status: "ok", durationMs: Date.now() - start })
+        .catch((auditError) => {
+          console.error("microsoft audit emit failed:", auditError);
+        });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -448,7 +451,10 @@ export class MicrosoftProviderService {
         /required scope/i.test(message) ? "denied"
         : /reconnect_required/i.test(message) ? "reconnect_required"
         : "error";
-      void this.emitAudit({ ...params, actor: actorIdOrEmail, status, durationMs: Date.now() - start, error: message });
+      void this.emitAudit({ ...params, actor: actorIdOrEmail, status, durationMs: Date.now() - start, error: message })
+        .catch((auditError) => {
+          console.error("microsoft audit emit failed:", auditError);
+        });
       throw error;
     }
   }
