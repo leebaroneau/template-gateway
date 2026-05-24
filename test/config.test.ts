@@ -184,4 +184,20 @@ describe("loadConfig — composio block", () => {
       COMPOSIO_AUTH_CONFIGS_JSON: '{"microsoft-composio": ""}'
     })).toThrow(/non-empty string auth config id/);
   });
+
+  it("respects custom toolkit lists and primary toolkit override", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "true",
+      COMPOSIO_MICROSOFT_TOOLKITS: "outlook,microsoft_teams",
+      COMPOSIO_MICROSOFT_PRIMARY_TOOLKIT: "microsoft_teams",
+      COMPOSIO_GOOGLE_TOOLKITS: "gmail,googlecalendar",
+      COMPOSIO_GOOGLE_PRIMARY_TOOLKIT: "googlecalendar"
+    });
+    expect(config.composio?.providers.microsoft.toolkits).toEqual(["outlook", "microsoft_teams"]);
+    expect(config.composio?.providers.microsoft.primaryToolkit).toBe("microsoft_teams");
+    expect(config.composio?.providers.google.toolkits).toEqual(["gmail", "googlecalendar"]);
+    expect(config.composio?.providers.google.primaryToolkit).toBe("googlecalendar");
+  });
 });
