@@ -1,13 +1,14 @@
 import type { GatewayConfig } from "../../config.js";
 import type { ComposioBindingStore } from "./binding-store.js";
-import type {
-  ComposioActor,
-  ComposioConnectResult,
-  ComposioGatewayProvider,
-  ComposioMcpUrlResult,
-  ComposioSessionClient,
-  ComposioStatus,
-  ComposioToolkitStatus
+import {
+  COMPOSIO_TOOLKIT_BY_SLUG,
+  type ComposioActor,
+  type ComposioConnectResult,
+  type ComposioGatewayProvider,
+  type ComposioMcpUrlResult,
+  type ComposioSessionClient,
+  type ComposioStatus,
+  type ComposioToolkitStatus
 } from "./types.js";
 
 interface ComposioProviderServiceOptions {
@@ -118,8 +119,9 @@ export class ComposioProviderService {
     });
   }
 
-  private providerConfig(provider: ComposioGatewayProvider): GatewayConfig["composio"]["providers"][ComposioGatewayProvider] {
-    const providerConfig = this.options.config.providers[provider];
+  private providerConfig(provider: ComposioGatewayProvider): NonNullable<GatewayConfig["composio"]>["providers"]["microsoft"] {
+    const toolkitKey = COMPOSIO_TOOLKIT_BY_SLUG[provider];
+    const providerConfig = this.options.config.providers[toolkitKey];
     if (!providerConfig) {
       throw new Error(`Composio provider is not configured: ${provider}`);
     }
