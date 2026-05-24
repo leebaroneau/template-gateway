@@ -9,7 +9,8 @@ export function createApp(config = loadConfig()) {
   const factory = makeComposioSessionFactory({
     composioApiKey: config.composioApiKey,
     composioProjectId: config.composioProjectId,
-    toolkitAllowlist: config.toolkitAllowlist
+    toolkitAllowlist: config.toolkitAllowlist,
+    authConfigs: config.authConfigs
   });
   const cache = new SessionCache(factory, { ttlSeconds: config.sessionTtlSeconds });
   const app = express();
@@ -49,6 +50,17 @@ export function createApp(config = loadConfig()) {
 }
 
 function main() {
+  // Keep the process alive on async errors that escaped a route handler.
+  // The handlers in forwardJsonRpc catch the common ones; this is a safety net.
+  process.on("unhandledRejection", (reason) => {
+    // eslint-disable-next-line no-console
+    console.error("[gateway] unhandledRejection:", reason);
+  });
+  process.on("uncaughtException", (err) => {
+    // eslint-disable-next-line no-console
+    console.error("[gateway] uncaughtException:", err);
+  });
+
   const config = loadConfig();
   const app = createApp(config);
   app.listen(config.port, () => {

@@ -9,6 +9,7 @@ export function makeComposioSessionFactory(opts: {
   composioApiKey: string;
   composioProjectId?: string;
   toolkitAllowlist?: string[];
+  authConfigs?: Record<string, string>;
 }): SessionFactory {
   // Lazy-load the Composio SDK so unit tests can avoid network calls.
   let clientPromise: Promise<{ create: (userId: string, config?: Record<string, unknown>) => Promise<unknown> }> | undefined;
@@ -28,6 +29,13 @@ export function makeComposioSessionFactory(opts: {
     const sessionConfig: Record<string, unknown> = {};
     if (opts.toolkitAllowlist?.length) {
       sessionConfig.toolkits = opts.toolkitAllowlist;
+    }
+    if (opts.authConfigs && Object.keys(opts.authConfigs).length) {
+      // Composio Tool Router auto-creates auth configs for managed-OAuth toolkits
+      // but requires explicit auth_configs for toolkits whose auth was provided
+      // by the user (API key auth like microsoft_clarity, or custom OAuth like
+      // pipedrive/docusign). Map shape: { "<toolkit_slug>": "ac_xxx" }.
+      sessionConfig.auth_configs = opts.authConfigs;
     }
     if (opts.composioProjectId) {
       sessionConfig.projectId = opts.composioProjectId;
@@ -66,7 +74,20 @@ export async function forwardJsonRpc(req: Request, res: Response, options: Forwa
     return;
   }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const session = await options.cache.get(userId);
+
+  let session;
+  try {
+    session = await options.cache.get(userId);
+  } catch (err) {
+    options.cache.invalidate(userId);
+    // eslint-disable-next-line no-console
+    console.error(`[gateway] session create failed for user_id=${userId}:`, err);
+    res.status(502).json({
+      error: "failed to create Composio Tool Router session",
+      detail: err instanceof Error ? err.message : String(err)
+    });
+    return;
+  }
 
   const init: RequestInit = {
     method: req.method,
