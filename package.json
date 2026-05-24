@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@composio/core": "^0.10.0",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "commander": "^12.1.0",
     "dotenv": "^16.6.1",
