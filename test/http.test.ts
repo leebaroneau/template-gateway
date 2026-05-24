@@ -191,7 +191,9 @@ function baseConfig() {
       allowedDomains: ["example.com"],
       tokenStorePath: "./data/microsoft-tokens.json",
       tokenStoreKey: undefined,
-      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
     },
     pipedrive: {
       clientId: undefined,
@@ -219,7 +221,9 @@ function createMicrosoftProvider(tempDir: string, fetch: typeof globalThis.fetch
       allowedDomains: ["genvest.com.au"],
       tokenStorePath: join(tempDir, "microsoft-tokens.json"),
       tokenStoreKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
     },
     stateStore: new MicrosoftOAuthStateStore(join(tempDir, "microsoft-states.json")),
     tokenStore: new MicrosoftTokenStore(join(tempDir, "microsoft-tokens.json"), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),

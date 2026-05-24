@@ -135,7 +135,9 @@ describe("buildCli", () => {
           allowedDomains: ["injected.example.com"],
           tokenStorePath: "./microsoft-tokens.json",
           tokenStoreKey: undefined,
-          scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+          scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+          graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+          sendEmailEnabled: false
         },
         pipedrive: {
           clientId: undefined,
@@ -240,7 +242,9 @@ function baseConfig() {
       allowedDomains: ["example.com"],
       tokenStorePath: "./microsoft-tokens.json",
       tokenStoreKey: undefined,
-      scopes: ["offline_access", "User.Read"]
+      scopes: ["offline_access", "User.Read"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
     },
     pipedrive: {
       clientId: undefined,

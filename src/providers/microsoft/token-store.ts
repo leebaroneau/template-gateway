@@ -79,6 +79,51 @@ export class MicrosoftTokenStore {
     const binding = await this.getBinding(actorIdOrEmail);
     return binding ? decryptTokenPayload(binding.tokenCiphertext, this.keyBase64) : undefined;
   }
+
+  async loadBinding(actorIdOrEmail: string): Promise<{ binding: MicrosoftBinding; payload: MicrosoftTokenPayload } | undefined> {
+    const binding = await this.getBinding(actorIdOrEmail);
+    if (!binding) return undefined;
+    const payload = decryptTokenPayload(binding.tokenCiphertext, this.keyBase64);
+    return { binding, payload };
+  }
+
+  async updateTokenPayload(
+    actorIdOrEmail: string,
+    payload: MicrosoftTokenPayload,
+    scope: string,
+    expiresAt?: string
+  ): Promise<void> {
+    const tokenCiphertext = encryptTokenPayload(payload, this.keyBase64);
+    const key = actorKey(actorIdOrEmail);
+    const email = actorIdOrEmail.trim().toLowerCase();
+    const now = new Date().toISOString();
+    await this.store.update((current) => ({
+      bindings: current.bindings.map((binding) => {
+        if (binding.actorId !== key && binding.actorEmail !== email) return binding;
+        return {
+          ...binding,
+          tokenCiphertext,
+          scope,
+          scopes: splitScopes(scope),
+          expiresAt,
+          status: "connected" as const,
+          updatedAt: now
+        };
+      })
+    }));
+  }
+
+  async markReconnectRequired(actorIdOrEmail: string): Promise<void> {
+    const key = actorKey(actorIdOrEmail);
+    const email = actorIdOrEmail.trim().toLowerCase();
+    const now = new Date().toISOString();
+    await this.store.update((current) => ({
+      bindings: current.bindings.map((binding) => {
+        if (binding.actorId !== key && binding.actorEmail !== email) return binding;
+        return { ...binding, status: "reconnect_required" as const, updatedAt: now };
+      })
+    }));
+  }
 }
 
 function statusFromBinding(binding: MicrosoftBinding): MicrosoftStatus {

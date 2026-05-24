@@ -8,6 +8,8 @@ export interface MicrosoftProviderConfig {
   tokenStorePath: string;
   tokenStoreKey?: string;
   scopes: string[];
+  graphRequestPathAllowlist: string[];
+  sendEmailEnabled: boolean;
 }
 
 export interface MicrosoftActor {

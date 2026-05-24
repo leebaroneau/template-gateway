@@ -18,7 +18,9 @@ const configSchema = z.object({
     allowedDomains: z.array(z.string().min(1)),
     tokenStorePath: z.string().min(1),
     tokenStoreKey: z.string().optional(),
-    scopes: z.array(z.string().min(1))
+    scopes: z.array(z.string().min(1)),
+    graphRequestPathAllowlist: z.array(z.string().min(1)).min(1),
+    sendEmailEnabled: z.boolean()
   }),
   pipedrive: z.object({
     clientId: z.string().min(1).optional(),
@@ -94,7 +96,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       allowedDomains: splitCsv(env.MICROSOFT_ALLOWED_DOMAINS ?? allowedEmailDomains.join(",")),
       tokenStorePath: env.MICROSOFT_TOKEN_STORE_PATH ?? "./data/microsoft-tokens.json",
       tokenStoreKey: optionalString(env.MICROSOFT_TOKEN_STORE_KEY),
-      scopes: splitScopes(env.MICROSOFT_SCOPES ?? "offline_access User.Read Mail.Read Calendars.Read")
+      scopes: splitScopes(env.MICROSOFT_SCOPES ?? "offline_access User.Read Mail.Read Calendars.Read"),
+      graphRequestPathAllowlist: splitCsv(env.MICROSOFT_TOOL_PATH_ALLOWLIST ?? "/me,/me/messages,/me/calendar"),
+      sendEmailEnabled: parseBoolean(env.MICROSOFT_SEND_EMAIL_ENABLED, false)
     },
     pipedrive: {
       clientId: optionalString(env.PIPEDRIVE_CLIENT_ID),

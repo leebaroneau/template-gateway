@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createProviderDirectory } from "../providers/directory.js";
 import type { MicrosoftProviderService } from "../providers/microsoft/service.js";
+import { ISO_8601_DATE_TIME } from "../providers/microsoft/service.js";
 import type { ComposioProviderService } from "../providers/composio/service.js";
 import type { ComposioGatewayProvider } from "../providers/composio/types.js";
 import type { ProviderRegistry } from "../providers/types.js";
@@ -17,7 +18,7 @@ interface ToolCapableServer {
 export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
-  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools">;
+  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages" | "listEvents" | "graphRequest" | "sendEmail">;
   enableComposioProviders?: boolean;
   composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
@@ -75,6 +76,79 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
         tools: options.microsoftProvider!.listTools()
       })
     );
+
+    server.tool(
+      "outlook_list_messages",
+      "List Outlook messages for the authenticated gateway actor. Requires Mail.Read.",
+      {
+        top: z.number().int().min(1).max(100).optional(),
+        skip: z.number().int().min(0).optional(),
+        query: z.string().min(1).max(500).optional()
+      },
+      async (input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) throw new Error("Missing authenticated gateway actor for outlook_list_messages");
+        return toolResult(await options.microsoftProvider!.listMessages!(actor, input));
+      }
+    );
+
+    // Fix 5: share the ISO 8601 regex with the service layer so the two
+    // validation points stay in sync.
+    const isoDateLike = z.string().regex(
+      ISO_8601_DATE_TIME,
+      "expected ISO 8601 date or datetime (e.g. 2026-05-25 or 2026-05-25T09:00:00Z)"
+    );
+
+    server.tool(
+      "calendar_list_events",
+      "List Microsoft 365 calendar events for the authenticated gateway actor. Requires Calendars.Read.",
+      {
+        top: z.number().int().min(1).max(100).optional(),
+        skip: z.number().int().min(0).optional(),
+        timeMin: isoDateLike.optional(),
+        timeMax: isoDateLike.optional()
+      },
+      async (input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) throw new Error("Missing authenticated gateway actor for calendar_list_events");
+        return toolResult(await options.microsoftProvider!.listEvents!(actor, input));
+      }
+    );
+
+    server.tool(
+      "graph_request",
+      "Allowlisted Microsoft Graph GET proxy for the authenticated gateway actor. Requires User.Read.",
+      {
+        method: z.literal("GET"),
+        path: z.string().min(1)
+      },
+      async (input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) throw new Error("Missing authenticated gateway actor for graph_request");
+        return toolResult(await options.microsoftProvider!.graphRequest!(actor, input));
+      }
+    );
+
+    const toolMeta = options.microsoftProvider.listTools();
+    const sendEmailEnabled = toolMeta.some((t) => t.name === "outlook_send_email");
+    if (sendEmailEnabled) {
+      server.tool(
+        "outlook_send_email",
+        "Send an Outlook email as the authenticated gateway actor. Requires Mail.Send. Gated by MICROSOFT_SEND_EMAIL_ENABLED.",
+        {
+          to: z.array(z.string().email()).min(1),
+          subject: z.string().min(1).max(500),
+          body: z.string().min(1).max(100_000),
+          cc: z.array(z.string().email()).optional(),
+          bcc: z.array(z.string().email()).optional()
+        },
+        async (input, extra) => {
+          const actor = actorKeyFromExtra(extra);
+          if (!actor) throw new Error("Missing authenticated gateway actor for outlook_send_email");
+          return toolResult(await options.microsoftProvider!.sendEmail!(actor, input));
+        }
+      );
+    }
   }
 
   if (options.enableComposioProviders && options.composioProvider) {
