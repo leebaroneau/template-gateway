@@ -212,12 +212,26 @@ export class MicrosoftProviderService {
   }
 
   private assertAllowedGraphPath(path: string): void {
-    // Normalize: must start with `/`, no `..`, no backslash, no embedded query.
-    if (!path.startsWith("/") || path.includes("..") || path.includes("\\")) {
+    // Defend against percent-encoded traversal: decode once, then enforce
+    // the same path rules against the decoded form (Graph normalizes %2E%2E
+    // server-side before routing).
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(path);
+    } catch {
+      throw new Error(`graph_request path not allowed (invalid encoding): ${path}`);
+    }
+    if (
+      !decoded.startsWith("/") ||
+      decoded.includes("..") ||
+      decoded.includes("\\") ||
+      decoded.includes("?") ||
+      decoded.includes("#")
+    ) {
       throw new Error(`graph_request path not allowed (invalid path): ${path}`);
     }
     const allowed = this.options.config.graphRequestPathAllowlist;
-    const ok = allowed.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+    const ok = allowed.some((prefix) => decoded === prefix || decoded.startsWith(prefix + "/"));
     if (!ok) {
       throw new Error(`graph_request path not allowed: ${path}. Allowed prefixes: ${allowed.join(", ")}`);
     }

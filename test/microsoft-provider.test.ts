@@ -480,6 +480,38 @@ describe("MicrosoftProviderService.graphRequest", () => {
       .rejects.toThrow(/path.*not allowed|invalid path/i);
     ctx.cleanup();
   });
+
+  it("rejects percent-encoded path traversal", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me/%2E%2E/users" })
+    ).rejects.toThrow(/path.*not allowed|invalid path/i);
+    ctx.cleanup();
+  });
+
+  it("rejects malformed percent-encoding", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me/%ZZ" })
+    ).rejects.toThrow(/invalid encoding|path.*not allowed/i);
+    ctx.cleanup();
+  });
+
+  it("rejects embedded query strings in path", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me/messages?$top=5" })
+    ).rejects.toThrow(/path.*not allowed|invalid path/i);
+    ctx.cleanup();
+  });
+
+  it("rejects embedded fragment in path", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(
+      ctx.service.graphRequest("bot@example.com", { method: "GET", path: "/me#frag" })
+    ).rejects.toThrow(/path.*not allowed|invalid path/i);
+    ctx.cleanup();
+  });
 });
 
 function jsonResponse(body: unknown): Response {
