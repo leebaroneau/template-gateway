@@ -216,3 +216,166 @@ describe("buildCli", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Helpers for Composio flag-gate tests
+// ---------------------------------------------------------------------------
+
+function baseConfig() {
+  return {
+    port: 3000,
+    apiBaseUrl: "http://localhost:3000",
+    allowedEmailDomains: ["example.com"],
+    tokenStorePath: "./tokens.json",
+    auditLogPath: "./audit.jsonl",
+    apiBearerTokens: [] as string[],
+    enabledProviders: ["microsoft"],
+    microsoft: {
+      clientId: undefined,
+      clientSecret: undefined,
+      tenantId: undefined,
+      redirectUri: "http://localhost:3000/auth/microsoft/callback",
+      allowedTenants: [] as string[],
+      allowedDomains: ["example.com"],
+      tokenStorePath: "./microsoft-tokens.json",
+      tokenStoreKey: undefined,
+      scopes: ["offline_access", "User.Read"]
+    },
+    pipedrive: {
+      clientId: undefined,
+      clientSecret: undefined,
+      redirectUri: "http://localhost:3000/auth/pipedrive/callback",
+      companyDomain: undefined,
+      allowedDomains: ["example.com"],
+      tokenStorePath: "./pipedrive-tokens.json",
+      tokenStoreKey: undefined,
+      scopes: [] as string[],
+      authorizeUrl: "https://oauth.pipedrive.com/oauth/authorize",
+      tokenUrl: "https://oauth.pipedrive.com/oauth/token"
+    }
+  };
+}
+
+function composioConfig() {
+  return {
+    apiKey: "ck_test",
+    bindingStorePath: "./composio-bindings.json",
+    clientSlug: "local",
+    authConfigs: {} as Record<string, string>,
+    providers: {
+      microsoft: { toolkits: ["outlook"], primaryToolkit: "outlook" },
+      google: { toolkits: ["gmail"], primaryToolkit: "gmail" }
+    }
+  };
+}
+
+describe("CLI — composio commands are flag-gated", () => {
+  it("does not register provider command when enableComposioProviders is false", () => {
+    const cli = buildCli({
+      write: () => {},
+      loadConfig: () => ({ ...baseConfig(), enableComposioProviders: false, composio: undefined })
+    });
+    const commandNames = cli.commands.map((c) => c.name());
+    expect(commandNames).not.toContain("provider");
+  });
+
+  it("registers provider command when enableComposioProviders is true", () => {
+    const cli = buildCli({
+      write: () => {},
+      loadConfig: () => ({ ...baseConfig(), enableComposioProviders: true, composio: composioConfig() })
+    });
+    const commandNames = cli.commands.map((c) => c.name());
+    expect(commandNames).toContain("provider");
+  });
+
+  it("registers provider connect, status, and mcp-url subcommands when flag is on", () => {
+    const cli = buildCli({
+      write: () => {},
+      loadConfig: () => ({ ...baseConfig(), enableComposioProviders: true, composio: composioConfig() })
+    });
+    const providerCmd = cli.commands.find((c) => c.name() === "provider");
+    expect(providerCmd).toBeDefined();
+    const subNames = providerCmd!.commands.map((c) => c.name());
+    expect(subNames).toContain("connect");
+    expect(subNames).toContain("status");
+    expect(subNames).toContain("mcp-url");
+  });
+
+  it("invokes composioProvider.createConnectUrl with the correct slug and actor", async () => {
+    const calls: Array<{ provider: string; actor: unknown }> = [];
+    const output: string[] = [];
+    const cli = buildCli({
+      write: (line) => output.push(line),
+      loadConfig: () => ({ ...baseConfig(), enableComposioProviders: true, composio: composioConfig() }),
+      composioProvider: {
+        createConnectUrl: async (provider, actor) => {
+          calls.push({ provider, actor });
+          return {
+            provider,
+            backend: "composio" as const,
+            status: "authorization_required" as const,
+            actorId: "bot@example.com",
+            actorEmail: "bot@example.com",
+            connectedAccountIds: [],
+            authorizeUrl: "https://composio.example.com/authorize?state=abc"
+          };
+        },
+        status: async () => { throw new Error("unexpected"); },
+        mcpUrl: async () => { throw new Error("unexpected"); }
+      }
+    });
+
+    await cli.parseAsync(["node", "gateway", "provider", "connect", "microsoft-composio", "--actor", "bot@example.com"], { from: "node" });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.provider).toBe("microsoft-composio");
+    expect(output).toEqual(["https://composio.example.com/authorize?state=abc"]);
+  });
+
+  it("invokes composioProvider.status for the provider status subcommand", async () => {
+    const output: string[] = [];
+    const cli = buildCli({
+      write: (line) => output.push(line),
+      loadConfig: () => ({ ...baseConfig(), enableComposioProviders: true, composio: composioConfig() }),
+      composioProvider: {
+        createConnectUrl: async () => { throw new Error("unexpected"); },
+        status: async (provider, actorIdOrEmail) => ({
+          provider,
+          backend: "composio" as const,
+          status: "connected" as const,
+          actorId: actorIdOrEmail,
+          connectedAccountIds: ["acc_123"]
+        }),
+        mcpUrl: async () => { throw new Error("unexpected"); }
+      }
+    });
+
+    await cli.parseAsync(["node", "gateway", "provider", "status", "google-composio", "--actor", "user@example.com"], { from: "node" });
+
+    expect(output).toEqual(["google-composio: connected user@example.com [acc_123]"]);
+  });
+
+  it("invokes composioProvider.mcpUrl for the provider mcp-url subcommand", async () => {
+    const output: string[] = [];
+    const cli = buildCli({
+      write: (line) => output.push(line),
+      loadConfig: () => ({ ...baseConfig(), enableComposioProviders: true, composio: composioConfig() }),
+      composioProvider: {
+        createConnectUrl: async () => { throw new Error("unexpected"); },
+        status: async () => { throw new Error("unexpected"); },
+        mcpUrl: async (provider, actorIdOrEmail) => ({
+          provider,
+          backend: "composio" as const,
+          status: "connected" as const,
+          actorId: actorIdOrEmail,
+          connectedAccountIds: ["acc_456"],
+          mcpUrl: "https://mcp.composio.dev/microsoft?connected_account_id=acc_456"
+        })
+      }
+    });
+
+    await cli.parseAsync(["node", "gateway", "provider", "mcp-url", "microsoft-composio", "--actor", "user@example.com"], { from: "node" });
+
+    expect(output).toEqual(["https://mcp.composio.dev/microsoft?connected_account_id=acc_456"]);
+  });
+});

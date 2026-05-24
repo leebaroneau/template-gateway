@@ -4,6 +4,9 @@ import { Command } from "commander";
 import { SessionTokenStore, type StaticServiceToken } from "./auth/session-tokens.js";
 import { loadConfig as loadGatewayConfig, type GatewayConfig } from "./config.js";
 import { providersFromConfig } from "./providers/defaults.js";
+import { createComposioProviderService } from "./providers/composio/factory.js";
+import type { ComposioProviderService } from "./providers/composio/service.js";
+import type { ComposioGatewayProvider } from "./providers/composio/types.js";
 import { createMicrosoftProviderService } from "./providers/microsoft/factory.js";
 import type { MicrosoftProviderService } from "./providers/microsoft/service.js";
 import { createPipedriveProviderService } from "./providers/pipedrive/factory.js";
@@ -22,6 +25,7 @@ export interface CliOptions extends CliIo {
   sessionStore?: SessionLister;
   microsoftProvider?: Pick<MicrosoftProviderService, "createConnectUrl" | "status">;
   pipedriveProvider?: Pick<PipedriveProviderService, "createConnectUrl" | "status">;
+  composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
 
 interface SessionLister {
@@ -130,6 +134,75 @@ export function buildCli(options: CliOptions = { write: (line) => console.log(li
       const expires = status.expiresAt ? ` expires ${status.expiresAt}` : "";
       options.write(`pipedrive: ${status.status} ${status.actorId}${upstream}${apiDomain}${scopes}${expires}`);
     });
+
+  // Composio commands are only registered when ENABLE_COMPOSIO_PROVIDERS=true.
+  // Read config eagerly at build time to check the flag; if config fails, skip
+  // registration silently — the error will surface when a command is invoked.
+  // Intentionally do NOT call writeError here to avoid double-reporting errors
+  // (the action handlers call readConfig again and will surface the message).
+  let composioEnabled = false;
+  try {
+    composioEnabled = loadConfig().enableComposioProviders;
+  } catch {
+    // Config error will surface when a command is actually invoked.
+  }
+
+  if (composioEnabled) {
+    const VALID_COMPOSIO_SLUGS: ComposioGatewayProvider[] = ["microsoft-composio", "google-composio"];
+
+    function resolveSlug(slug: string): ComposioGatewayProvider {
+      if (!(VALID_COMPOSIO_SLUGS as string[]).includes(slug)) {
+        throw new CliError(`Unknown Composio provider slug: ${slug}. Valid values: ${VALID_COMPOSIO_SLUGS.join(", ")}`);
+      }
+      return slug as ComposioGatewayProvider;
+    }
+
+    const providerGroup = program.command("provider").description("Manage Composio provider connections");
+
+    providerGroup.command("connect <slug>")
+      .description("Print a Composio OAuth connect URL for an actor")
+      .requiredOption("--actor <email>", "Actor email address")
+      .option("--actor-id <id>", "Stable actor id or profile")
+      .option("--actor-name <name>", "Display actor name")
+      .action(async (slug: string, commandOptions: { actor: string; actorId?: string; actorName?: string }) => {
+        const provider = options.composioProvider ?? createComposioProviderService(readConfig(loadConfig, writeError));
+        const result = await provider.createConnectUrl(resolveSlug(slug), {
+          actorId: commandOptions.actorId,
+          actorEmail: commandOptions.actor,
+          actorName: commandOptions.actorName
+        });
+        if (result.authorizeUrl) {
+          options.write(result.authorizeUrl);
+        } else if (result.mcpUrl) {
+          options.write(result.mcpUrl);
+        } else {
+          options.write(`${slug}: ${result.status} ${result.actorId}`);
+        }
+      });
+
+    providerGroup.command("status <slug>")
+      .description("Print Composio connection status for an actor")
+      .requiredOption("--actor <id-or-email>", "Actor id, profile, or email")
+      .action(async (slug: string, commandOptions: { actor: string }) => {
+        const provider = options.composioProvider ?? createComposioProviderService(readConfig(loadConfig, writeError));
+        const status = await provider.status(resolveSlug(slug), commandOptions.actor);
+        const connectedAccounts = status.connectedAccountIds.length > 0 ? ` [${status.connectedAccountIds.join(",")}]` : " []";
+        options.write(`${slug}: ${status.status} ${status.actorId}${connectedAccounts}`);
+      });
+
+    providerGroup.command("mcp-url <slug>")
+      .description("Print the Composio MCP URL for an actor")
+      .requiredOption("--actor <id-or-email>", "Actor id, profile, or email")
+      .action(async (slug: string, commandOptions: { actor: string }) => {
+        const provider = options.composioProvider ?? createComposioProviderService(readConfig(loadConfig, writeError));
+        const result = await provider.mcpUrl(resolveSlug(slug), commandOptions.actor);
+        if (result.mcpUrl) {
+          options.write(result.mcpUrl);
+        } else {
+          options.write(`${slug}: ${result.status} ${result.actorId}`);
+        }
+      });
+  }
 
   return program;
 }
