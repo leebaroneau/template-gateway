@@ -42,18 +42,19 @@ export function makeComposioSessionFactory(opts: {
       sessionConfig.projectId = opts.composioProjectId;
     }
     const session = (await client.create(userId, sessionConfig)) as {
+      sessionId?: string;
+      mcp?: { url?: string; headers?: Record<string, string> };
+      // Older SDKs / fallback shapes:
       url?: string;
       mcpUrl?: string;
       headers?: Record<string, string>;
     };
-    const url = session.mcpUrl ?? session.url;
+    const url = session.mcp?.url ?? session.mcpUrl ?? session.url;
+    const headers = session.mcp?.headers ?? session.headers ?? { "x-api-key": opts.composioApiKey };
     if (!url) {
       throw new Error("Composio Tool Router did not return a session URL");
     }
-    return {
-      url,
-      headers: session.headers ?? { "x-api-key": opts.composioApiKey }
-    };
+    return { url, headers };
   };
 }
 
