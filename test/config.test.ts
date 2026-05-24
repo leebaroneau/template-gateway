@@ -21,7 +21,9 @@ describe("loadConfig", () => {
         allowedDomains: ["example.com"],
         tokenStorePath: "./data/microsoft-tokens.json",
         tokenStoreKey: undefined,
-        scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+        scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+        graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+        sendEmailEnabled: false
       },
       pipedrive: {
         clientId: undefined,
@@ -99,7 +101,9 @@ describe("loadConfig", () => {
       allowedDomains: ["genvest.com.au"],
       tokenStorePath: "/data/microsoft.json",
       tokenStoreKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      scopes: ["offline_access", "User.Read", "Mail.Read", "Mail.Send"]
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Mail.Send"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
     });
   });
 
@@ -199,5 +203,27 @@ describe("loadConfig — composio block", () => {
     expect(config.composio?.providers.microsoft.primaryToolkit).toBe("microsoft_teams");
     expect(config.composio?.providers.google.toolkits).toEqual(["gmail", "googlecalendar"]);
     expect(config.composio?.providers.google.primaryToolkit).toBe("googlecalendar");
+  });
+});
+
+describe("loadConfig — microsoft tool surface", () => {
+  it("defaults graphRequestPathAllowlist to [/me, /me/messages, /me/calendar]", () => {
+    const config = loadConfig({});
+    expect(config.microsoft.graphRequestPathAllowlist).toEqual(["/me", "/me/messages", "/me/calendar"]);
+  });
+
+  it("defaults sendEmailEnabled to false", () => {
+    const config = loadConfig({});
+    expect(config.microsoft.sendEmailEnabled).toBe(false);
+  });
+
+  it("parses MICROSOFT_TOOL_PATH_ALLOWLIST from CSV env var", () => {
+    const config = loadConfig({ MICROSOFT_TOOL_PATH_ALLOWLIST: "/me,/me/drive,/me/contacts" });
+    expect(config.microsoft.graphRequestPathAllowlist).toEqual(["/me", "/me/drive", "/me/contacts"]);
+  });
+
+  it("parses MICROSOFT_SEND_EMAIL_ENABLED from env var", () => {
+    const config = loadConfig({ MICROSOFT_SEND_EMAIL_ENABLED: "true" });
+    expect(config.microsoft.sendEmailEnabled).toBe(true);
   });
 });

@@ -41,6 +41,13 @@ interface TokenResponse {
   error_description?: string;
 }
 
+interface ValidAccessToken {
+  accessToken: string;
+  scopes: string[];
+  upstreamLogin: string;
+  tenantId: string;
+}
+
 interface MicrosoftProfileResponse {
   id?: string;
   mail?: string;
@@ -134,6 +141,77 @@ export class MicrosoftProviderService {
       { name: "calendar_list_events", requiredScope: "Calendars.Read", readOnly: true },
       { name: "graph_request", requiredScope: "User.Read", readOnly: true }
     ];
+  }
+
+  async requireValidAccessToken(actorIdOrEmail: string, requiredScope: string): Promise<ValidAccessToken> {
+    const loaded = await this.options.tokenStore.loadBinding(actorIdOrEmail);
+    if (!loaded) {
+      throw new Error(`Microsoft provider not connected for actor: ${actorIdOrEmail}`);
+    }
+    const { binding, payload } = loaded;
+    if (binding.status !== "connected") {
+      throw new Error(`Microsoft binding is ${binding.status}; reconnect_required.`);
+    }
+    if (!binding.scopes.includes(requiredScope)) {
+      throw new Error(`Required scope not bound: ${requiredScope}. Bound scopes: ${binding.scope}`);
+    }
+    if (this.tokenExpired(binding.expiresAt)) {
+      const refreshed = await this.refreshAccessToken(actorIdOrEmail, payload.refreshToken);
+      return { accessToken: refreshed.accessToken, scopes: refreshed.scopes, upstreamLogin: binding.upstreamLogin, tenantId: binding.tenantId };
+    }
+    return { accessToken: payload.accessToken, scopes: binding.scopes, upstreamLogin: binding.upstreamLogin, tenantId: binding.tenantId };
+  }
+
+  private tokenExpired(expiresAt: string | undefined): boolean {
+    if (!expiresAt) return false;
+    return new Date(expiresAt).getTime() <= Date.now() + 30_000;
+  }
+
+  private async refreshAccessToken(
+    actorIdOrEmail: string,
+    refreshToken: string | undefined
+  ): Promise<{ accessToken: string; scopes: string[]; scope: string; expiresAt?: string }> {
+    if (!refreshToken) {
+      await this.options.tokenStore.markReconnectRequired(actorIdOrEmail);
+      throw new Error("Microsoft refresh token absent; binding marked reconnect_required.");
+    }
+    const body = new URLSearchParams({
+      client_id: this.options.config.clientId!,
+      client_secret: this.options.config.clientSecret!,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      redirect_uri: this.options.config.redirectUri,
+      scope: this.options.config.scopes.join(" ")
+    });
+    const response = await this.fetchImpl(`${tenantBaseUrl(this.options.config.tenantId!)}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+    const tokenPayload = await response.json() as TokenResponse;
+    if (!response.ok) {
+      if (tokenPayload.error === "invalid_grant") {
+        await this.options.tokenStore.markReconnectRequired(actorIdOrEmail);
+        throw new Error(`Microsoft refresh returned invalid_grant; binding marked reconnect_required: ${tokenPayload.error_description || ""}`);
+      }
+      throw new Error(tokenPayload.error_description || tokenPayload.error || "Microsoft token refresh failed.");
+    }
+    if (!tokenPayload.access_token) throw new Error("Microsoft refresh response did not include an access token.");
+    const scope = tokenPayload.scope || this.options.config.scopes.join(" ");
+    const expiresAt = tokenPayload.expires_in ? new Date(Date.now() + tokenPayload.expires_in * 1000).toISOString() : undefined;
+    await this.options.tokenStore.updateTokenPayload(
+      actorIdOrEmail,
+      {
+        accessToken: tokenPayload.access_token,
+        refreshToken: tokenPayload.refresh_token ?? refreshToken,
+        tokenType: tokenPayload.token_type || "Bearer",
+        scope,
+        expiresAt
+      },
+      scope,
+      expiresAt
+    );
+    return { accessToken: tokenPayload.access_token, scopes: scope.split(" ").filter(Boolean), scope, expiresAt };
   }
 
   private authorizationUrl(state: string): string {

@@ -162,13 +162,193 @@ function createService(tempDir: string, fetchImpl: typeof fetch = vi.fn() as any
       allowedDomains: ["genvest.com.au"],
       tokenStorePath: join(tempDir, "microsoft-tokens.json"),
       tokenStoreKey: TOKEN_KEY,
-      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
     },
     stateStore: new MicrosoftOAuthStateStore(join(tempDir, "microsoft-states.json")),
     tokenStore: new MicrosoftTokenStore(join(tempDir, "microsoft-tokens.json"), TOKEN_KEY),
     fetch: fetchImpl
   });
 }
+
+// ---------------------------------------------------------------------------
+// requireValidAccessToken helpers
+// ---------------------------------------------------------------------------
+
+async function setupBoundService(
+  opts: { scope: string; expiresInSec: number },
+  fetchImpl: typeof fetch = vi.fn() as any
+): Promise<{ service: MicrosoftProviderService; cleanup: () => void }> {
+  const tempDir = mkdtempSync(join(tmpdir(), "template-gateway-ms-bound-"));
+  const tokenStore = new MicrosoftTokenStore(join(tempDir, "microsoft-tokens.json"), TOKEN_KEY);
+  const expiresAt =
+    opts.expiresInSec <= 0
+      ? new Date(Date.now() - 1000).toISOString()
+      : new Date(Date.now() + opts.expiresInSec * 1000).toISOString();
+
+  await tokenStore.saveConnectedBinding({
+    actorId: "bot@example.com",
+    actorEmail: "bot@example.com",
+    actorName: "Test Bot",
+    upstreamLogin: "bot@example.com",
+    tenantId: "tenant-1",
+    scope: opts.scope,
+    expiresAt,
+    payload: {
+      accessToken: "bound-access-token",
+      refreshToken: "bound-refresh-token",
+      tokenType: "Bearer",
+      scope: opts.scope,
+      expiresAt
+    }
+  });
+
+  const service = new MicrosoftProviderService({
+    config: {
+      clientId: "client-1",
+      clientSecret: "secret-1",
+      tenantId: "tenant-1",
+      redirectUri: "https://gateway.example.com/auth/microsoft/callback",
+      allowedTenants: ["tenant-1"],
+      allowedDomains: ["example.com"],
+      tokenStorePath: join(tempDir, "microsoft-tokens.json"),
+      tokenStoreKey: TOKEN_KEY,
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
+    },
+    stateStore: new MicrosoftOAuthStateStore(join(tempDir, "microsoft-states.json")),
+    tokenStore,
+    fetch: fetchImpl
+  });
+
+  return { service, cleanup: () => rmSync(tempDir, { recursive: true, force: true }) };
+}
+
+async function setupUnboundService(
+  fetchImpl: typeof fetch = vi.fn() as any
+): Promise<{ service: MicrosoftProviderService; cleanup: () => void }> {
+  const tempDir = mkdtempSync(join(tmpdir(), "template-gateway-ms-unbound-"));
+  const service = new MicrosoftProviderService({
+    config: {
+      clientId: "client-1",
+      clientSecret: "secret-1",
+      tenantId: "tenant-1",
+      redirectUri: "https://gateway.example.com/auth/microsoft/callback",
+      allowedTenants: ["tenant-1"],
+      allowedDomains: ["example.com"],
+      tokenStorePath: join(tempDir, "microsoft-tokens.json"),
+      tokenStoreKey: TOKEN_KEY,
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+      graphRequestPathAllowlist: ["/me", "/me/messages", "/me/calendar"],
+      sendEmailEnabled: false
+    },
+    stateStore: new MicrosoftOAuthStateStore(join(tempDir, "microsoft-states.json")),
+    tokenStore: new MicrosoftTokenStore(join(tempDir, "microsoft-tokens.json"), TOKEN_KEY),
+    fetch: fetchImpl
+  });
+  return { service, cleanup: () => rmSync(tempDir, { recursive: true, force: true }) };
+}
+
+// ---------------------------------------------------------------------------
+// requireValidAccessToken tests
+// ---------------------------------------------------------------------------
+
+describe("MicrosoftProviderService.requireValidAccessToken", () => {
+  it("returns bound access token when not expired", async () => {
+    const { service, cleanup } = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 });
+    try {
+      const result = await service.requireValidAccessToken("bot@example.com", "Mail.Read");
+      expect(result.accessToken).toBe("bound-access-token");
+      expect(result.scopes).toContain("Mail.Read");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("refreshes when expired", async () => {
+    let exchanged = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/oauth2/v2.0/token") && init?.method === "POST") {
+        exchanged = true;
+        return jsonResponse({
+          access_token: "fresh-access-token",
+          refresh_token: "fresh-refresh-token",
+          token_type: "Bearer",
+          scope: "offline_access User.Read Mail.Read",
+          expires_in: 3600
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const { service, cleanup } = await setupBoundService(
+      { scope: "offline_access User.Read Mail.Read", expiresInSec: -1 },
+      fetchImpl
+    );
+    try {
+      const result = await service.requireValidAccessToken("bot@example.com", "Mail.Read");
+      expect(exchanged).toBe(true);
+      expect(result.accessToken).toBe("fresh-access-token");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("marks reconnect_required and throws on invalid_grant", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/oauth2/v2.0/token") && init?.method === "POST") {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ error: "invalid_grant", error_description: "Token has expired" }),
+          text: async () => JSON.stringify({ error: "invalid_grant" })
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const { service, cleanup } = await setupBoundService(
+      { scope: "offline_access User.Read Mail.Read", expiresInSec: -1 },
+      fetchImpl
+    );
+    try {
+      await expect(
+        service.requireValidAccessToken("bot@example.com", "Mail.Read")
+      ).rejects.toThrow(/reconnect_required/i);
+
+      const statusResult = await service.status("bot@example.com");
+      expect(statusResult.status).toBe("reconnect_required");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("rejects when required scope is missing from binding", async () => {
+    const { service, cleanup } = await setupBoundService({ scope: "offline_access User.Read Mail.Read", expiresInSec: 3600 });
+    try {
+      await expect(
+        service.requireValidAccessToken("bot@example.com", "Mail.Send")
+      ).rejects.toThrow(/required scope.*Mail\.Send/i);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("rejects when actor is not bound", async () => {
+    const { service, cleanup } = await setupUnboundService();
+    try {
+      await expect(
+        service.requireValidAccessToken("bot@example.com", "User.Read")
+      ).rejects.toThrow(/not connected|no binding/i);
+    } finally {
+      cleanup();
+    }
+  });
+});
 
 function jsonResponse(body: unknown): Response {
   return {
