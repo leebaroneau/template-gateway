@@ -17,7 +17,7 @@ interface ToolCapableServer {
 export interface GatewayMcpServerOptions {
   providers: ProviderRegistry;
   apiBaseUrl: string;
-  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages">;
+  microsoftProvider?: Pick<MicrosoftProviderService, "status" | "listTools" | "listMessages" | "listEvents">;
   enableComposioProviders?: boolean;
   composioProvider?: Pick<ComposioProviderService, "createConnectUrl" | "status" | "mcpUrl">;
 }
@@ -88,6 +88,22 @@ export function createGatewayMcpServer<T extends ToolCapableServer>(
         const actor = actorKeyFromExtra(extra);
         if (!actor) throw new Error("Missing authenticated gateway actor for outlook_list_messages");
         return toolResult(await options.microsoftProvider!.listMessages!(actor, input));
+      }
+    );
+
+    server.tool(
+      "calendar_list_events",
+      "List Microsoft 365 calendar events for the authenticated gateway actor. Requires Calendars.Read.",
+      {
+        top: z.number().int().min(1).max(100).optional(),
+        skip: z.number().int().min(0).optional(),
+        timeMin: z.string().min(1).optional(),
+        timeMax: z.string().min(1).optional()
+      },
+      async (input, extra) => {
+        const actor = actorKeyFromExtra(extra);
+        if (!actor) throw new Error("Missing authenticated gateway actor for calendar_list_events");
+        return toolResult(await options.microsoftProvider!.listEvents!(actor, input));
       }
     );
   }

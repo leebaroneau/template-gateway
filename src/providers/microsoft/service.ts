@@ -167,6 +167,33 @@ export class MicrosoftProviderService {
     };
   }
 
+  async listEvents(
+    actorIdOrEmail: string,
+    options: { top?: number; skip?: number; timeMin?: string; timeMax?: string }
+  ): Promise<{ events: unknown[]; nextLink?: string | null }> {
+    const token = await this.requireValidAccessToken(actorIdOrEmail, "Calendars.Read");
+    const params: string[] = [];
+    if (options.top !== undefined) params.push(`$top=${encodeURIComponent(String(options.top))}`);
+    if (options.skip !== undefined) params.push(`$skip=${encodeURIComponent(String(options.skip))}`);
+    const filterParts: string[] = [];
+    if (options.timeMin) filterParts.push(`start/dateTime ge '${options.timeMin}'`);
+    if (options.timeMax) filterParts.push(`end/dateTime le '${options.timeMax}'`);
+    if (filterParts.length > 0) params.push(`$filter=${encodeURIComponent(filterParts.join(" and "))}`);
+    const queryString = params.length > 0 ? `?${params.join("&")}` : "";
+    const requestUrl = `https://graph.microsoft.com/v1.0/me/calendar/events${queryString}`;
+    const response = await this.fetchImpl(requestUrl, {
+      headers: { Authorization: `Bearer ${token.accessToken}` }
+    });
+    const payload = await response.json() as { value?: unknown[]; "@odata.nextLink"?: string };
+    if (!response.ok) {
+      throw new Error(`Graph listEvents failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`);
+    }
+    return {
+      events: payload.value ?? [],
+      nextLink: payload["@odata.nextLink"] ?? null
+    };
+  }
+
   async requireValidAccessToken(actorIdOrEmail: string, requiredScope: string): Promise<ValidAccessToken> {
     const loaded = await this.options.tokenStore.loadBinding(actorIdOrEmail);
     if (!loaded) {

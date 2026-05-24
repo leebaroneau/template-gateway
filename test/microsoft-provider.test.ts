@@ -384,6 +384,36 @@ describe("MicrosoftProviderService.listMessages", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// listEvents tests
+// ---------------------------------------------------------------------------
+
+describe("MicrosoftProviderService.listEvents", () => {
+  it("returns Graph events for a connected actor with Calendars.Read", async () => {
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (typeof url === "string" && url.startsWith("https://graph.microsoft.com/v1.0/me/calendar/events")) {
+        const headers = init?.headers as Record<string, string>;
+        expect(headers.Authorization).toBe("Bearer bound-access-token");
+        return new Response(JSON.stringify({
+          value: [{ id: "EVT1", subject: "Standup", start: { dateTime: "2026-05-25T09:00:00", timeZone: "UTC" } }],
+          "@odata.nextLink": null
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+    const ctx = await setupBoundService({ scope: "offline_access User.Read Calendars.Read", expiresInSec: 3600 }, fetchImpl);
+    const result = await ctx.service.listEvents("bot@example.com", { top: 10 });
+    expect((result.events[0] as { subject: string }).subject).toBe("Standup");
+    ctx.cleanup();
+  });
+
+  it("rejects when Calendars.Read is not bound", async () => {
+    const ctx = await setupBoundService({ scope: "offline_access User.Read", expiresInSec: 3600 });
+    await expect(ctx.service.listEvents("bot@example.com", {})).rejects.toThrow(/Calendars\.Read/);
+    ctx.cleanup();
+  });
+});
+
 function jsonResponse(body: unknown): Response {
   return {
     ok: true,
