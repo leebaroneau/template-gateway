@@ -1,5 +1,7 @@
 # Composio Provider Design
 
+> **Status:** Opt-in fallback. Superseded as the default by [2026-05-24-google-native-and-composio-demotion-design.md](./2026-05-24-google-native-and-composio-demotion-design.md). The architecture below remains accurate for deployments that set `ENABLE_COMPOSIO_PROVIDERS=true`; the gateway slugs have been renamed from `microsoft` / `google` to `microsoft-composio` / `google-composio`.
+
 ## Goal
 
 Make Composio the default upstream integration engine for Microsoft and Google services while keeping `template-gateway` as the stable client-facing gateway.
