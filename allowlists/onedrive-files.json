@@ -1,0 +1,20 @@
+{
+  "toolkit": "one_drive",
+  "description": "OneDrive file ops: list, find, read, write, share, organise.",
+  "entity_scope": "per_profile",
+  "notes": "Each profile/bot signs in with its own Microsoft 365 account via in-chat OAuth.",
+  "tools": [
+    "ONE_DRIVE_ONEDRIVE_LIST_ITEMS",
+    "ONE_DRIVE_ONEDRIVE_FIND_FILE",
+    "ONE_DRIVE_ONEDRIVE_FIND_FOLDER",
+    "ONE_DRIVE_GET_ITEM",
+    "ONE_DRIVE_GET_RECENT_ITEMS",
+    "ONE_DRIVE_SEARCH_ITEMS",
+    "ONE_DRIVE_DOWNLOAD_FILE",
+    "ONE_DRIVE_ONEDRIVE_UPLOAD_FILE",
+    "ONE_DRIVE_ONEDRIVE_CREATE_FOLDER",
+    "ONE_DRIVE_ONEDRIVE_CREATE_TEXT_FILE",
+    "ONE_DRIVE_CREATE_LINK",
+    "ONE_DRIVE_LIST_FOLDER_CHILDREN"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "toolkit": "google_search_console",
+  "description": "GSC read-only: sites, sitemaps, search analytics queries, URL inspection. No admin (no add/delete/submit).",
+  "entity_scope": "shared",
+  "notes": "Single brand-level OAuth covers all profiles. user_id=<brand-slug> hardcoded in overlay URL. Same Google account as GA4 typically.",
+  "tools": [
+    "GOOGLE_SEARCH_CONSOLE_LIST_SITES",
+    "GOOGLE_SEARCH_CONSOLE_GET_SITE",
+    "GOOGLE_SEARCH_CONSOLE_LIST_SITEMAPS",
+    "GOOGLE_SEARCH_CONSOLE_GET_SITEMAP",
+    "GOOGLE_SEARCH_CONSOLE_INSPECT_URL",
+    "GOOGLE_SEARCH_CONSOLE_SEARCH_ANALYTICS_QUERY"
+  ]
+}
