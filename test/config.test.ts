@@ -10,6 +10,7 @@ describe("loadConfig", () => {
       tokenStorePath: "./data/tokens.json",
       auditLogPath: "./data/audit.jsonl",
       apiBearerTokens: [],
+      enableComposioProviders: false,
       enabledProviders: ["microsoft"],
       microsoft: {
         clientId: undefined,
@@ -106,5 +107,45 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ PORT: "3000abc" })).toThrow();
     expect(() => loadConfig({ PORT: "1.5" })).toThrow();
     expect(() => loadConfig({ PORT: "abc" })).toThrow();
+  });
+});
+
+describe("loadConfig — ENABLE_COMPOSIO_PROVIDERS flag", () => {
+  it("defaults enableComposioProviders to false when env var is unset", () => {
+    const config = loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com"
+    });
+    expect(config.enableComposioProviders).toBe(false);
+  });
+
+  it("parses true values", () => {
+    for (const value of ["1", "true", "yes", "on", "TRUE"]) {
+      const config = loadConfig({
+        API_BASE_URL: "http://localhost:3000",
+        ALLOWED_EMAIL_DOMAINS: "example.com",
+        ENABLE_COMPOSIO_PROVIDERS: value
+      });
+      expect(config.enableComposioProviders, `value=${value}`).toBe(true);
+    }
+  });
+
+  it("parses false values", () => {
+    for (const value of ["0", "false", "no", "off", "FALSE"]) {
+      const config = loadConfig({
+        API_BASE_URL: "http://localhost:3000",
+        ALLOWED_EMAIL_DOMAINS: "example.com",
+        ENABLE_COMPOSIO_PROVIDERS: value
+      });
+      expect(config.enableComposioProviders, `value=${value}`).toBe(false);
+    }
+  });
+
+  it("throws on unparseable values", () => {
+    expect(() => loadConfig({
+      API_BASE_URL: "http://localhost:3000",
+      ALLOWED_EMAIL_DOMAINS: "example.com",
+      ENABLE_COMPOSIO_PROVIDERS: "maybe"
+    })).toThrow(/Expected boolean/);
   });
 });

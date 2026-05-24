@@ -7,6 +7,7 @@ const configSchema = z.object({
   tokenStorePath: z.string().min(1),
   auditLogPath: z.string().min(1),
   apiBearerTokens: z.array(z.string().min(32)),
+  enableComposioProviders: z.boolean(),
   enabledProviders: z.array(z.string().min(1)),
   microsoft: z.object({
     clientId: z.string().min(1).optional(),
@@ -47,6 +48,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     tokenStorePath: env.TOKEN_STORE_PATH ?? "./data/tokens.json",
     auditLogPath: env.AUDIT_LOG_PATH ?? "./data/audit.jsonl",
     apiBearerTokens: splitCsv(env.API_BEARER_TOKENS ?? ""),
+    enableComposioProviders: parseBoolean(env.ENABLE_COMPOSIO_PROVIDERS, false),
     enabledProviders: splitCsv(env.ENABLED_PROVIDERS ?? "microsoft"),
     microsoft: {
       clientId: optionalString(env.MICROSOFT_CLIENT_ID),
@@ -99,4 +101,12 @@ function splitScopes(value: string): string[] {
 function optionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error(`Expected boolean value, received: ${value}`);
 }
