@@ -9,8 +9,6 @@ export interface Brand {
   name: string;
   slug: string;
   status: EntityStatus;
-  createdAt: string;
-  updatedAt?: string;
 }
 
 export interface Region {
@@ -20,8 +18,6 @@ export interface Region {
   name: string;
   status: EntityStatus;
   domain?: string;
-  createdAt: string;
-  updatedAt?: string;
 }
 
 export interface ConnectorField {
@@ -38,7 +34,8 @@ export interface Connector {
   category: ConnectorCategory;
   authMode: AuthMode;
   backendOptions: GatewayBackendType[];
-  fields: ConnectorField[];
+  requiredFields: ConnectorField[];
+  scopes: string[];
   description?: string;
 }
 
@@ -47,23 +44,20 @@ export interface Connection {
   brandId: string;
   regionId: string;
   connectorId: string;
-  backend: GatewayBackendType;
+  backendType: GatewayBackendType;
   displayName: string;
   status: ConnectionStatus;
   configSummary?: Record<string, string>;
   lastTestedAt?: string;
   lastError?: string;
-  createdAt: string;
-  updatedAt?: string;
 }
 
 export interface ApiKey {
   id: string;
-  name: string;
+  label: string;
   preview: string;
   fingerprint: string;
-  status: EntityStatus | "revoked";
-  createdAt: string;
+  status: "active" | "revoked";
   rotatedAt?: string;
   revokedAt?: string;
 }
@@ -71,22 +65,24 @@ export interface ApiKey {
 export interface ApiClient {
   id: string;
   name: string;
-  brandId?: string;
-  regionId?: string;
-  status: EntityStatus;
+  type: "service" | "agent" | "worker";
+  status: "active" | "revoked";
+  scopes: string[];
+  owner: string;
+  lastUsedAt?: string;
+  requestCount24h: number;
+  errorRate24h: number;
   keys: ApiKey[];
-  createdAt: string;
-  updatedAt?: string;
 }
 
 export interface AuditEvent {
   id: string;
   action: string;
-  entityType: "brand" | "region" | "connection" | "api_key" | "api_client";
-  entityId: string;
-  summary: string;
+  targetType: "brand" | "region" | "connection" | "api_key" | "api_client";
+  targetId: string;
+  detail: string;
+  timestamp: string;
   actor: string;
-  createdAt: string;
   metadata?: Record<string, string>;
 }
 
@@ -115,8 +111,8 @@ export interface CreateConnectionInput {
   brandId: string;
   regionId: string;
   connectorId: string;
-  backend: GatewayBackendType;
-  displayName?: string;
+  backendType: GatewayBackendType;
+  displayName: string;
   configSummary?: Record<string, string>;
 }
 
@@ -126,6 +122,6 @@ export interface GatewayConnectionBackend {
   createRegion(input: CreateRegionInput): Region;
   createConnection(input: CreateConnectionInput): Connection;
   testConnection(connectionId: string): Connection;
-  rotateApiKey(clientId: string, keyId: string): ApiClient;
-  revokeApiKey(clientId: string, keyId: string): ApiClient;
+  rotateApiKey(clientId: string, keyId: string): ApiKey;
+  revokeApiKey(clientId: string, keyId: string): ApiKey;
 }

@@ -80,15 +80,14 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       id: `brand_${slug.replace(/-/g, "_")}`,
       name,
       slug,
-      status: "active",
-      createdAt: this.now()
+      status: "active"
     };
     this.state.brands.push(brand);
     this.writeAudit({
       action: "brand.created",
-      entityType: "brand",
-      entityId: brand.id,
-      summary: `${brand.name} brand created.`,
+      targetType: "brand",
+      targetId: brand.id,
+      detail: `${brand.name} brand created.`,
       metadata: { slug: brand.slug }
     });
     return cloneValue(brand);
@@ -110,8 +109,7 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       brandId: brand.id,
       code,
       name,
-      status: "active",
-      createdAt: this.now()
+      status: "active"
     };
     const domain = input.domain?.trim();
     if (domain) {
@@ -121,9 +119,9 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
     this.state.regions.push(region);
     this.writeAudit({
       action: "region.created",
-      entityType: "region",
-      entityId: region.id,
-      summary: `${brand.name} ${region.code} region created.`,
+      targetType: "region",
+      targetId: region.id,
+      detail: `${brand.name} ${region.code} region created.`,
       metadata: { brandId: brand.id, code: region.code }
     });
     return cloneValue(region);
@@ -137,19 +135,19 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
     }
 
     const connector = this.findConnector(input.connectorId);
-    if (!connector.backendOptions.includes(input.backend)) {
-      throw new Error(`Connector ${connector.slug} does not support backend ${input.backend}`);
+    if (!connector.backendOptions.includes(input.backendType)) {
+      throw new Error(`Connector ${connector.slug} does not support backend ${input.backendType}`);
     }
 
+    const displayName = requireText(input.displayName, "Connection displayName");
     const connection: Connection = {
-      id: this.nextConnectionId(brand, region, connector, input.backend),
+      id: this.nextConnectionId(brand, region, connector, input.backendType),
       brandId: brand.id,
       regionId: region.id,
       connectorId: connector.id,
-      backend: input.backend,
-      displayName: input.displayName?.trim() || `${brand.name} ${region.code} ${connector.name}`,
-      status: "pending",
-      createdAt: this.now()
+      backendType: input.backendType,
+      displayName,
+      status: "pending"
     };
     if (input.configSummary) {
       connection.configSummary = cloneValue(input.configSummary);
@@ -158,14 +156,14 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
     this.state.connections.push(connection);
     this.writeAudit({
       action: "connection.saved",
-      entityType: "connection",
-      entityId: connection.id,
-      summary: `${connection.displayName} connection saved.`,
+      targetType: "connection",
+      targetId: connection.id,
+      detail: `${connection.displayName} connection saved.`,
       metadata: {
         brandId: brand.id,
         regionId: region.id,
         connectorId: connector.id,
-        backend: connection.backend
+        backendType: connection.backendType
       }
     });
     return cloneValue(connection);
@@ -173,58 +171,52 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
 
   testConnection(connectionId: string): Connection {
     const connection = this.findConnection(connectionId);
-    const testedAt = this.now();
     connection.status = "connected";
-    connection.lastTestedAt = testedAt;
-    connection.updatedAt = testedAt;
+    connection.lastTestedAt = this.now();
     delete connection.lastError;
 
     this.writeAudit({
       action: "connection.tested",
-      entityType: "connection",
-      entityId: connection.id,
-      summary: `${connection.displayName} connection tested.`,
+      targetType: "connection",
+      targetId: connection.id,
+      detail: `${connection.displayName} connection tested.`,
       metadata: { status: connection.status }
     });
     return cloneValue(connection);
   }
 
-  rotateApiKey(clientId: string, keyId: string): ApiClient {
+  rotateApiKey(clientId: string, keyId: string): ApiKey {
     const { client, key } = this.findApiKey(clientId, keyId);
-    const rotatedAt = this.now();
     const token = String(this.keySequence++).padStart(4, "0");
     key.status = "active";
-    key.rotatedAt = rotatedAt;
+    key.rotatedAt = this.now();
     key.preview = `gw_mock_rotated_...${token}`;
     key.fingerprint = `mock-fp-${key.id}-${token}`;
     delete key.revokedAt;
-    client.updatedAt = rotatedAt;
 
     this.writeAudit({
       action: "api_key.rotated",
-      entityType: "api_key",
-      entityId: key.id,
-      summary: `${client.name} API key rotated.`,
+      targetType: "api_key",
+      targetId: key.id,
+      detail: `${client.name} API key rotated.`,
       metadata: { clientId: client.id, keyId: key.id }
     });
-    return cloneValue(client);
+    return cloneValue(key);
   }
 
-  revokeApiKey(clientId: string, keyId: string): ApiClient {
+  revokeApiKey(clientId: string, keyId: string): ApiKey {
     const { client, key } = this.findApiKey(clientId, keyId);
-    const revokedAt = this.now();
     key.status = "revoked";
-    key.revokedAt = revokedAt;
-    client.updatedAt = revokedAt;
+    key.revokedAt = this.now();
 
     this.writeAudit({
       action: "api_key.revoked",
-      entityType: "api_key",
-      entityId: key.id,
-      summary: `${client.name} API key revoked.`,
+      targetType: "api_key",
+      targetId: key.id,
+      detail: `${client.name} API key revoked.`,
       metadata: { clientId: client.id, keyId: key.id }
     });
-    return cloneValue(client);
+    return cloneValue(key);
   }
 
   private findBrand(brandId: string): Brand {
@@ -275,14 +267,14 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
     brand: Brand,
     region: Region,
     connector: Connector,
-    backend: GatewayBackendType
+    backendType: GatewayBackendType
   ): string {
     const base = [
       "connection",
       brand.slug.replace(/-/g, "_"),
       region.code.toLowerCase(),
       connector.slug.replace(/-/g, "_"),
-      backend
+      backendType
     ].join("_");
     if (!this.state.connections.some((connection) => connection.id === base)) {
       return base;
@@ -294,12 +286,12 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
     return `${base}_${suffix}`;
   }
 
-  private writeAudit(input: Omit<AuditEvent, "id" | "actor" | "createdAt">): void {
+  private writeAudit(input: Omit<AuditEvent, "id" | "actor" | "timestamp">): void {
     const id = `audit_${String(this.auditSequence++).padStart(4, "0")}`;
     this.state.auditEvents.unshift({
       id,
       actor: "fixture-admin",
-      createdAt: this.now(),
+      timestamp: this.now(),
       ...input
     });
   }
