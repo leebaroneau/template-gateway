@@ -19,28 +19,42 @@ function cloneValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function normalizeSlug(raw: string): string {
-  return raw
-    .trim()
+function requireText(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} is required`);
+  }
+  return trimmed;
+}
+
+function optionalText(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function normalizeSlug(raw: unknown, label: string): string {
+  return requireText(raw, label)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
 
-function normalizeRegionCode(raw: string): string {
-  return raw
-    .trim()
+function normalizeRegionCode(raw: unknown): string {
+  return requireText(raw, "Region code")
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function requireText(value: string | undefined, label: string): string {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    throw new Error(`${label} is required`);
-  }
-  return trimmed;
 }
 
 function nextNumericId(existingIds: string[]): number {
@@ -70,11 +84,7 @@ function isForbiddenRawSecretKey(key: string): boolean {
 function allowedConfigKeysFor(connector: Connector): Set<string> {
   const allowed = new Set<string>();
   for (const field of connector.requiredFields) {
-    if (field.secret) {
-      for (const key of safeReferenceKeysFor(field.key)) {
-        allowed.add(key);
-      }
-    } else {
+    if (!field.secret) {
       allowed.add(field.key);
     }
   }
@@ -158,7 +168,7 @@ function sanitizeConnectionConfig(
     if (field.secret) {
       const safeReference = firstNonEmptyConfigValue(connector, input, safeReferenceKeysFor(field.key));
       if (safeReference) {
-        sanitized[safeReference.key] = safeReference.value;
+        sanitized[`${field.key}_ref`] = `fixture-redacted:${field.key}`;
         continue;
       }
 
@@ -198,7 +208,10 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
 
   createBrand(input: CreateBrandInput): Brand {
     const name = requireText(input.name, "Brand name");
-    const slug = normalizeSlug(input.slug ?? input.name);
+    const slug = normalizeSlug(
+      input.slug === undefined ? input.name : input.slug,
+      input.slug === undefined ? "Brand name" : "Brand slug"
+    );
     if (!slug) {
       throw new Error("Brand slug is required");
     }
@@ -241,7 +254,7 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       name,
       status: "active"
     };
-    const domain = input.domain?.trim();
+    const domain = optionalText(input.domain, "Region domain");
     if (domain) {
       region.domain = domain;
     }
@@ -269,7 +282,7 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       throw new Error(`Connector ${connector.slug} does not support backend ${input.backendType}`);
     }
 
-    const displayName = requireText(input.displayName, "Connection displayName");
+    const displayName = requireText(input.displayName, "Connection display name");
     const configSummary = sanitizeConnectionConfig(connector, input.configSummary);
     const connection: Connection = {
       id: this.nextConnectionId(brand, region, connector, input.backendType),

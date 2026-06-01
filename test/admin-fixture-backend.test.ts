@@ -185,6 +185,22 @@ describe("FixtureGatewayBackend", () => {
     );
   });
 
+  it("rejects non-string brand names and slugs with clear validation errors", () => {
+    const backend = new FixtureGatewayBackend();
+
+    expect(() => backend.createBrand({ name: 123 } as unknown as Parameters<typeof backend.createBrand>[0])).toThrow(
+      /Brand name must be a string/
+    );
+    expect(() =>
+      backend.createBrand({ name: "Malformed Brand", slug: 123 } as unknown as Parameters<typeof backend.createBrand>[0])
+    ).toThrow(/Brand slug must be a string/);
+    expect(() =>
+      backend.createBrand({ name: "Null Slug Brand", slug: null } as unknown as Parameters<
+        typeof backend.createBrand
+      >[0])
+    ).toThrow(/Brand slug must be a string/);
+  });
+
   it("adds a region under an existing brand", () => {
     const backend = new FixtureGatewayBackend();
     const brand = backend.snapshot().brands.find((candidate) => candidate.slug === "haverford");
@@ -222,6 +238,30 @@ describe("FixtureGatewayBackend", () => {
         name: "Duplicate Australia"
       })
     ).toThrow(/Duplicate region code for haverford: AU/);
+  });
+
+  it("rejects non-string region codes, names, and domains with clear validation errors", () => {
+    const backend = new FixtureGatewayBackend();
+    const brand = backend.snapshot().brands.find((candidate) => candidate.slug === "haverford")!;
+
+    expect(() =>
+      backend.createRegion({ brandId: brand.id, code: 123, name: "Canada" } as unknown as Parameters<
+        typeof backend.createRegion
+      >[0])
+    ).toThrow(/Region code must be a string/);
+    expect(() =>
+      backend.createRegion({ brandId: brand.id, code: "CA", name: 123 } as unknown as Parameters<
+        typeof backend.createRegion
+      >[0])
+    ).toThrow(/Region name must be a string/);
+    expect(() =>
+      backend.createRegion({
+        brandId: brand.id,
+        code: "CA",
+        name: "Canada",
+        domain: 123
+      } as unknown as Parameters<typeof backend.createRegion>[0])
+    ).toThrow(/Region domain must be a string/);
   });
 
   it("adds a pending connection with a supported backend", () => {
@@ -327,6 +367,22 @@ describe("FixtureGatewayBackend", () => {
     ).toThrow(/Connector outlook requires config field mailbox to be a string/);
   });
 
+  it("rejects non-string connection display names with a clear validation error", () => {
+    const backend = new FixtureGatewayBackend();
+    const { brand, region, connector } = getFixtureRefs(backend);
+
+    expect(() =>
+      backend.createConnection({
+        brandId: brand.id,
+        regionId: region.id,
+        connectorId: connector.id,
+        backendType: "composio",
+        displayName: 123,
+        configSummary: { mailbox: "ops@haverford.example", tenant: "Haverford Microsoft tenant" }
+      } as unknown as Parameters<typeof backend.createConnection>[0])
+    ).toThrow(/Connection display name must be a string/);
+  });
+
   it("drops unknown non-string config values while preserving valid required fields", () => {
     const backend = new FixtureGatewayBackend();
     const { brand, region, connector } = getFixtureRefs(backend);
@@ -382,6 +438,88 @@ describe("FixtureGatewayBackend", () => {
       expect(summary).not.toHaveProperty("password");
       expect(Object.values(summary)).not.toContain(rawToken);
       expect(Object.values(summary)).not.toContain(rawPassword);
+    }
+  });
+
+  it("redacts submitted secret reference values before returning or storing a connection", () => {
+    const cases = [
+      {
+        connectorSlug: "shopify",
+        backendType: "nango" as const,
+        displayName: "Credential Ref Shopify",
+        configSummary: {
+          shop_domain: "haverford-au.myshopify.com",
+          credential_ref: "shpat_credential_ref_should_not_echo"
+        },
+        expectedSummary: {
+          shop_domain: "haverford-au.myshopify.com",
+          access_token_ref: "fixture-redacted:access_token"
+        },
+        submittedSecret: "shpat_credential_ref_should_not_echo"
+      },
+      {
+        connectorSlug: "shopify",
+        backendType: "nango" as const,
+        displayName: "Access Token Ref Shopify",
+        configSummary: {
+          shop_domain: "haverford-au.myshopify.com",
+          access_token_ref: "shpat_access_token_ref_should_not_echo"
+        },
+        expectedSummary: {
+          shop_domain: "haverford-au.myshopify.com",
+          access_token_ref: "fixture-redacted:access_token"
+        },
+        submittedSecret: "shpat_access_token_ref_should_not_echo"
+      },
+      {
+        connectorSlug: "klaviyo",
+        backendType: "native" as const,
+        displayName: "Private API Key Ref Klaviyo",
+        configSummary: {
+          account_id: "HAV-AU",
+          private_api_key_ref: "pk_private_api_key_ref_should_not_echo"
+        },
+        expectedSummary: {
+          account_id: "HAV-AU",
+          private_api_key_ref: "fixture-redacted:private_api_key"
+        },
+        submittedSecret: "pk_private_api_key_ref_should_not_echo"
+      },
+      {
+        connectorSlug: "haverford-dev-api",
+        backendType: "internal" as const,
+        displayName: "Service Account Ref Dev API",
+        configSummary: {
+          service: "gateway-admin",
+          service_account_token_ref: "hvd_service_account_token_ref_should_not_echo"
+        },
+        expectedSummary: {
+          service: "gateway-admin",
+          service_account_token_ref: "fixture-redacted:service_account_token"
+        },
+        submittedSecret: "hvd_service_account_token_ref_should_not_echo"
+      }
+    ];
+
+    for (const testCase of cases) {
+      const backend = new FixtureGatewayBackend();
+      const state = backend.snapshot();
+      const brand = state.brands.find((candidate) => candidate.slug === "haverford")!;
+      const region = state.regions.find((candidate) => candidate.brandId === brand.id && candidate.code === "AU")!;
+      const connector = state.connectors.find((candidate) => candidate.slug === testCase.connectorSlug)!;
+
+      const connection = backend.createConnection({
+        brandId: brand.id,
+        regionId: region.id,
+        connectorId: connector.id,
+        backendType: testCase.backendType,
+        displayName: testCase.displayName,
+        configSummary: testCase.configSummary
+      });
+
+      expect(connection.configSummary).toEqual(testCase.expectedSummary);
+      expect(JSON.stringify(connection)).not.toContain(testCase.submittedSecret);
+      expect(JSON.stringify(backend.snapshot())).not.toContain(testCase.submittedSecret);
     }
   });
 
@@ -445,11 +583,12 @@ describe("FixtureGatewayBackend", () => {
     for (const summary of [referencedConnection.configSummary, storedReferenced.configSummary]) {
       expect(summary).toEqual({
         service: "gateway-admin",
-        credential_ref: credentialRef
+        service_account_token_ref: "fixture-redacted:service_account_token"
       });
       expect(summary).not.toHaveProperty("service_account_token");
-      expect(summary).not.toHaveProperty("service_account_token_ref");
+      expect(summary).not.toHaveProperty("credential_ref");
       expect(Object.values(summary)).not.toContain(rawTokenWithCredentialRef);
+      expect(Object.values(summary)).not.toContain(credentialRef);
     }
   });
 
