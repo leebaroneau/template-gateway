@@ -51,11 +51,10 @@ function nextNumericId(existingIds: string[]): number {
   return max + 1;
 }
 
-const genericSafeReferenceKeys = new Set(["credential_ref"]);
 const forbiddenRawSecretKeys = new Set(["accesstoken", "clientsecret", "refreshtoken", "authorization", "bearer"]);
 
 function safeReferenceKeysFor(fieldKey: string): string[] {
-  if (genericSafeReferenceKeys.has(fieldKey)) {
+  if (fieldKey === "credential_ref") {
     return [fieldKey];
   }
   return [`${fieldKey}_ref`, "credential_ref"];
@@ -70,7 +69,7 @@ function isForbiddenRawSecretKey(key: string): boolean {
 }
 
 function allowedConfigKeysFor(connector: Connector): Set<string> {
-  const allowed = new Set(genericSafeReferenceKeys);
+  const allowed = new Set<string>();
   for (const field of connector.requiredFields) {
     if (field.secret) {
       for (const key of safeReferenceKeysFor(field.key)) {

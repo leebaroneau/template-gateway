@@ -105,7 +105,7 @@ describe("FixtureGatewayBackend", () => {
     for (const connection of state.connections) {
       const connector = state.connectors.find((candidate) => candidate.id === connection.connectorId);
       expect(connector, `Missing connector for ${connection.id}`).toBeDefined();
-      const allowedConfigKeys = new Set(["credential_ref"]);
+      const allowedConfigKeys = new Set<string>();
 
       for (const field of connector!.requiredFields) {
         if (field.secret) {
@@ -252,7 +252,7 @@ describe("FixtureGatewayBackend", () => {
     });
   });
 
-  it("adds an empty config summary for a connector with no required fields when configSummary is omitted", () => {
+  it("adds an empty config summary for a connector with no required fields", () => {
     const initial = createInitialGatewayState();
     initial.connectors.push({
       id: "connector_fixture_status",
@@ -276,7 +276,8 @@ describe("FixtureGatewayBackend", () => {
       regionId: region.id,
       connectorId: connector.id,
       backendType: "internal",
-      displayName: "Haverford Fixture Status"
+      displayName: "Haverford Fixture Status",
+      configSummary: { credential_ref: "should not persist" }
     });
 
     expect(connection.configSummary).toEqual({});
@@ -409,6 +410,7 @@ describe("FixtureGatewayBackend", () => {
         refreshToken: rawValues[2],
         authorization: rawValues[3],
         bearer: rawValues[4],
+        credential_ref: "should not persist",
         displayHint: rawValues[5]
       }
     });
