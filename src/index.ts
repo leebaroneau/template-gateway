@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js";
 import { actorContext, bearerAuth } from "./auth.js";
 import { SessionCache } from "./session-cache.js";
 import { forwardJsonRpc, makeComposioSessionFactory } from "./mcp-proxy.js";
+import { createAdminRouter } from "./admin/routes.js";
 
 export function createApp(config = loadConfig()) {
   const factory = makeComposioSessionFactory({
@@ -24,6 +25,8 @@ export function createApp(config = loadConfig()) {
       toolkitAllowlist: config.toolkitAllowlist ?? "<all toolkits the API key can see>"
     });
   });
+
+  app.use("/admin", createAdminRouter());
 
   const mcpRouter = express.Router();
   mcpRouter.use(express.json({ limit: "1mb" }));
