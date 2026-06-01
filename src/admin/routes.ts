@@ -28,24 +28,32 @@ function sendError(res: Response, error: unknown): void {
   res.status(400).json({ error: errorMessage(error) });
 }
 
+function noStore(res: Response): void {
+  res.set("Cache-Control", "no-store");
+}
+
 export function createAdminRouter(backend: GatewayConnectionBackend = new FixtureGatewayBackend()): express.Router {
   const router = express.Router();
 
   router.use(express.json({ limit: "256kb" }));
 
   router.get("/", (_req: Request, res: Response) => {
+    noStore(res);
     res.type("html").send(renderAdminPage());
   });
 
   router.get("/style.css", (_req: Request, res: Response) => {
+    noStore(res);
     res.type("text/css").send(adminStyles);
   });
 
   router.get("/app.js", (_req: Request, res: Response) => {
+    noStore(res);
     res.type("application/javascript").send(adminClientScript);
   });
 
   router.get("/api/state", (_req: Request, res: Response) => {
+    noStore(res);
     res.json(backend.snapshot());
   });
 

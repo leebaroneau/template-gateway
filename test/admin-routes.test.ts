@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { renderAdminClientScript } from "../src/admin/client-script.js";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
 import { createAdminRouter } from "../src/admin/routes.js";
 import { createApp } from "../src/index.js";
@@ -32,9 +33,10 @@ describe("admin routes", () => {
 
     expect(admin.status).toBe(200);
     expect(admin.headers["content-type"]).toContain("text/html");
+    expect(admin.headers["cache-control"]).toBe("no-store");
     expect(admin.text).toContain("Haverford Unified Gateway");
     expect(admin.text).toContain("/admin/style.css");
-    expect(admin.text).toContain("/admin/app.js");
+    expect(admin.text).toContain("/admin/app.js?v=fixture-ui");
     expect(admin.text).toContain("Overview");
     expect(admin.text).toContain("Brands");
     expect(admin.text).toContain("Connectors");
@@ -52,9 +54,11 @@ describe("admin routes", () => {
 
     expect(css.status).toBe(200);
     expect(css.headers["content-type"]).toContain("text/css");
+    expect(css.headers["cache-control"]).toBe("no-store");
     expect(css.text).toContain(".admin-shell");
     expect(js.status).toBe(200);
     expect(js.headers["content-type"]).toContain("javascript");
+    expect(js.headers["cache-control"]).toBe("no-store");
     expect(js.text).toContain("/admin/api/state");
     expect(js.text).toContain('class="panel setup-flow" id="setup-flow"');
     expect(js.text).toContain('class="setup-summary span-2"');
@@ -67,6 +71,61 @@ describe("admin routes", () => {
     expect(js.text).toContain('data-action="rotate-key"');
     expect(js.text).toContain('data-action="revoke-key"');
     expect(() => new Function(js.text)).not.toThrow();
+  });
+
+  it("serves admin JavaScript that boots against the fixture state", async () => {
+    const { app, backend } = buildAdminApp();
+    const js = await request(app).get("/admin/app.js");
+    const root = { innerHTML: "" };
+    const errorPanel = { textContent: "", hidden: true };
+    const documentMock = {
+      getElementById(id: string) {
+        if (id === "app-root") {
+          return root;
+        }
+        if (id === "app-error") {
+          return errorPanel;
+        }
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+      addEventListener() {
+        // Event wiring is covered by route/lifecycle tests; this smoke check verifies initial boot.
+      }
+    };
+    const fetchMock = async (path: string) => {
+      expect(path).toBe("/admin/api/state");
+      return {
+        ok: true,
+        text: async () => JSON.stringify(backend.snapshot())
+      };
+    };
+
+    const executeScript = new Function("document", "fetch", js.text);
+    expect(() => executeScript(documentMock, fetchMock)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(errorPanel.hidden).toBe(true);
+    expect(root.innerHTML).toContain("Overview");
+    expect(root.innerHTML).toContain("Brands");
+    expect(root.innerHTML).toContain("Active keys");
+  });
+
+  it("wraps browser JavaScript so tsx helper-injected function strings can execute", () => {
+    const script = renderAdminClientScript(`function mockClientApp() {
+      function markBooted() {
+        window.booted = true;
+      }
+      __name(markBooted, "markBooted");
+      markBooted();
+    }`);
+    const windowMock = { booted: false };
+
+    const executeScript = new Function("window", script);
+    expect(() => executeScript(windowMock)).not.toThrow();
+    expect(windowMock.booted).toBe(true);
   });
 
   it("serves browser JavaScript that keeps selected regions scoped to the selected brand", async () => {

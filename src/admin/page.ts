@@ -32,7 +32,7 @@ export function renderAdminPage(): string {
         </section>
       </main>
     </div>
-    <script src="/admin/app.js"></script>
+    <script src="/admin/app.js?v=fixture-ui"></script>
   </body>
 </html>`;
 }

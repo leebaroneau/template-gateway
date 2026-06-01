@@ -656,4 +656,11 @@ function adminClientApp() {
   void refreshState().catch((error: unknown) => showError(error instanceof Error ? error.message : String(error)));
 }
 
-export const adminClientScript = `(${adminClientApp.toString()})();\n`;
+export function renderAdminClientScript(appSource = adminClientApp.toString()): string {
+  return `(() => {
+  const __name = (target) => target;
+  (${appSource})();
+})();\n`;
+}
+
+export const adminClientScript = renderAdminClientScript();
