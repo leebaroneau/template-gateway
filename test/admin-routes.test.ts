@@ -58,6 +58,27 @@ describe("admin routes", () => {
     expect(js.text).toContain("/admin/api/state");
     expect(js.text).toContain("setup-flow");
     expect(js.text).toContain("lifecycle");
+    expect(() => new Function(js.text)).not.toThrow();
+  });
+
+  it("serves browser JavaScript that keeps selected regions scoped to the selected brand", async () => {
+    const { app } = buildAdminApp();
+
+    const js = await request(app).get("/admin/app.js");
+
+    expect(js.status).toBe(200);
+    expect(js.text).toContain("function selectedRegionForBrand");
+    expect(js.text).toContain("function selectBrand");
+    expect(js.text).not.toContain('const selectedRegion = byId("regions", uiState.selectedRegionId);');
+  });
+
+  it("keeps unauthenticated MCP POST protected when admin routes are mounted", async () => {
+    const app = createApp(testConfig());
+
+    const res = await request(app).post("/mcp").send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "missing bearer token" });
   });
 
   it("returns fixture state with brands and connectors", async () => {

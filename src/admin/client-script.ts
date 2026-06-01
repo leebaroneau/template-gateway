@@ -100,6 +100,24 @@ function adminClientApp() {
     return collection("regions").filter((region) => region.brandId === brandId);
   }
 
+  function selectedRegionForBrand(regions: Item[]): Item | undefined {
+    const selectedRegion = regions.find((region) => region.id === uiState.selectedRegionId);
+    if (selectedRegion) {
+      return selectedRegion;
+    }
+    const fallbackRegion = regions[0];
+    uiState.selectedRegionId = fallbackRegion?.id ?? null;
+    return fallbackRegion;
+  }
+
+  function selectBrand(brandId: string | null): void {
+    if (uiState.selectedBrandId !== brandId) {
+      uiState.selectedRegionId = null;
+    }
+    uiState.selectedBrandId = brandId;
+    selectedRegionForBrand(brandRegions(brandId));
+  }
+
   function regionConnections(regionId: unknown): Item[] {
     return collection("connections").filter((connection) => connection.regionId === regionId);
   }
@@ -108,11 +126,9 @@ function adminClientApp() {
     const brands = collection("brands");
     const connectors = collection("connectors");
     if (!brands.some((brand) => brand.id === uiState.selectedBrandId)) {
-      uiState.selectedBrandId = brands[0]?.id ?? null;
-    }
-    const regions = brandRegions(uiState.selectedBrandId);
-    if (!regions.some((region) => region.id === uiState.selectedRegionId)) {
-      uiState.selectedRegionId = regions[0]?.id ?? null;
+      selectBrand(brands[0]?.id ?? null);
+    } else {
+      selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
     }
     if (!connectors.some((connector) => connector.id === uiState.selectedConnectorId)) {
       uiState.selectedConnectorId = connectors[0]?.id ?? null;
@@ -300,7 +316,7 @@ function adminClientApp() {
 
   function renderConnectorSetup(): string {
     const selectedBrand = byId("brands", uiState.selectedBrandId);
-    const selectedRegion = byId("regions", uiState.selectedRegionId);
+    const selectedRegion = selectedRegionForBrand(brandRegions(selectedBrand?.id));
     const connector = byId("connectors", uiState.selectedConnectorId) ?? collection("connectors")[0];
     if (!selectedBrand || !selectedRegion || !connector) {
       return `<section class="panel setup-flow"><div class="empty-panel">Select a brand, region, and connector.</div></section>`;
@@ -355,7 +371,7 @@ function adminClientApp() {
   function renderBrands(): string {
     const selectedBrand = byId("brands", uiState.selectedBrandId);
     const regions = brandRegions(uiState.selectedBrandId);
-    const selectedRegion = byId("regions", uiState.selectedRegionId);
+    const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
     return `${viewHeader("Brands", "Manage brand and region entities for the fixture gateway.")}
       <div class="grid-wide">
@@ -536,7 +552,7 @@ function adminClientApp() {
         slug: field(form, "slug")
       });
       applyState(result.state);
-      uiState.selectedBrandId = result.brand?.id ?? uiState.selectedBrandId;
+      selectBrand(result.brand?.id ?? uiState.selectedBrandId);
       render();
       return;
     }
@@ -551,14 +567,16 @@ function adminClientApp() {
       });
       applyState(result.state);
       uiState.selectedRegionId = result.region?.id ?? uiState.selectedRegionId;
+      selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
       render();
       return;
     }
     if (action === "create-connection") {
-      if (!uiState.selectedBrandId || !uiState.selectedRegionId) {
+      const selectedRegion = selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
+      if (!uiState.selectedBrandId || !selectedRegion) {
         throw new Error("Select a brand and region before adding a connection.");
       }
-      const result = await postJson(`/admin/api/regions/${encodeURIComponent(uiState.selectedRegionId)}/connections`, {
+      const result = await postJson(`/admin/api/regions/${encodeURIComponent(selectedRegion.id)}/connections`, {
         brandId: uiState.selectedBrandId,
         connectorId: field(form, "connectorId"),
         backendType: field(form, "backendType"),
@@ -617,12 +635,12 @@ function adminClientApp() {
     }
     const control = target.dataset.control;
     if (control === "brand") {
-      uiState.selectedBrandId = target.value;
-      uiState.selectedRegionId = brandRegions(target.value)[0]?.id ?? null;
+      selectBrand(target.value || null);
       render();
     }
     if (control === "region") {
       uiState.selectedRegionId = target.value;
+      selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
       render();
     }
     if (control === "connector") {
