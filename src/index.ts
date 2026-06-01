@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response } from "express";
+import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.js";
 import { actorContext, bearerAuth } from "./auth.js";
 import { SessionCache } from "./session-cache.js";
@@ -74,6 +75,10 @@ function main() {
   });
 }
 
-if (process.argv[1] && process.argv[1].endsWith("index.js")) {
+function isDirectEntry(argvEntry = process.argv[1], moduleUrl = import.meta.url): boolean {
+  return Boolean(argvEntry && pathToFileURL(argvEntry).href === moduleUrl);
+}
+
+if (isDirectEntry()) {
   main();
 }
