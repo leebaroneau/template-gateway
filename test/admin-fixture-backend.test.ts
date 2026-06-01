@@ -16,6 +16,7 @@ describe("FixtureGatewayBackend", () => {
     const outlook = state.connectors.find((connector) => connector.slug === "outlook")!;
     const devApi = state.connectors.find((connector) => connector.slug === "haverford-dev-api")!;
     const marketingOps = state.apiClients.find((client) => client.name === "Marketing Ops")!;
+    const lifecycleConnection = state.connections.find((connection) => connection.id === "conn-hav-nz-gsc")!;
 
     expect(state.brands.map((brand) => brand.name)).toEqual(
       expect.arrayContaining(["Haverford", "Catnets", "Koenig Machinery"])
@@ -37,7 +38,16 @@ describe("FixtureGatewayBackend", () => {
     expect(state.connections.map((connection) => connection.backendType)).toEqual(
       expect.arrayContaining(["nango", "composio", "native", "internal"])
     );
+    expect(lifecycleConnection).toMatchObject({
+      brandId: "brand_haverford",
+      regionId: "region_haverford_nz",
+      connectorId: "connector_google_search_console",
+      backendType: "nango",
+      status: "connected",
+      lastUsedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)
+    });
     expect(marketingOps).toMatchObject({
+      id: "client-marketing-ops",
       type: "service",
       status: "active",
       owner: "Marketing Ops",
@@ -46,6 +56,7 @@ describe("FixtureGatewayBackend", () => {
       errorRate24h: expect.any(Number)
     });
     expect(marketingOps.keys[0]).toMatchObject({
+      id: "key-marketing-primary",
       label: "Primary",
       status: "active",
       createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)
@@ -265,6 +276,29 @@ describe("FixtureGatewayBackend", () => {
     ]);
   });
 
+  it("rejects rotation for revoked API keys without reactivating them", () => {
+    const backend = new FixtureGatewayBackend();
+    const clientId = "api_client_reporting_worker";
+    const keyId = "api_key_reporting_worker_primary";
+    const beforeState = backend.snapshot();
+    const beforeClient = beforeState.apiClients.find((candidate) => candidate.id === clientId)!;
+    const beforeKey = beforeClient.keys.find((candidate) => candidate.id === keyId)!;
+
+    expect(() => backend.rotateApiKey(clientId, keyId)).toThrow(`Cannot rotate revoked API key: ${keyId}`);
+
+    const afterState = backend.snapshot();
+    const afterClient = afterState.apiClients.find((candidate) => candidate.id === clientId)!;
+    const afterKey = afterClient.keys.find((candidate) => candidate.id === keyId)!;
+    expect(afterKey).toMatchObject({
+      id: keyId,
+      status: "revoked",
+      revokedAt: beforeKey.revokedAt,
+      preview: beforeKey.preview,
+      fingerprint: beforeKey.fingerprint
+    });
+    expect(afterState.auditEvents).toHaveLength(beforeState.auditEvents.length);
+  });
+
   it("returns clear errors for unknown brand, region, connector, connection, client, and key", () => {
     const backend = new FixtureGatewayBackend();
     const { brand, region, connector } = getFixtureRefs(backend);
@@ -292,7 +326,7 @@ describe("FixtureGatewayBackend", () => {
     ).toThrow(/Unknown connector: missing-connector/);
     expect(() => backend.testConnection("missing-connection")).toThrow(/Unknown connection: missing-connection/);
     expect(() => backend.rotateApiKey("missing-client", "missing-key")).toThrow(/Unknown API client: missing-client/);
-    expect(() => backend.revokeApiKey("api_client_marketing_ops", "missing-key")).toThrow(
+    expect(() => backend.revokeApiKey("client-marketing-ops", "missing-key")).toThrow(
       /Unknown API key: missing-key/
     );
   });

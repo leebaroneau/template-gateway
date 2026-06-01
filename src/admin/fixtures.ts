@@ -173,14 +173,16 @@ export function createInitialGatewayState(): GatewayState {
         lastTestedAt: "2026-05-29T05:00:00.000Z"
       },
       {
-        id: "connection_haverford_nz_ga4",
+        id: "conn-hav-nz-gsc",
         brandId: "brand_haverford",
         regionId: "region_haverford_nz",
-        connectorId: "connector_google_analytics_4",
+        connectorId: "connector_google_search_console",
         backendType: "nango",
-        displayName: "Haverford NZ GA4",
-        status: "needs_config",
-        configSummary: { property_id: "not configured" }
+        displayName: "Haverford NZ Search Console",
+        status: "connected",
+        configSummary: { site_url: "https://www.haverford.co.nz" },
+        lastTestedAt: "2026-05-29T05:30:00.000Z",
+        lastUsedAt: "2026-05-31T04:00:00.000Z"
       },
       {
         id: "connection_haverford_au_outlook",
@@ -250,7 +252,7 @@ export function createInitialGatewayState(): GatewayState {
     ],
     apiClients: [
       {
-        id: "api_client_marketing_ops",
+        id: "client-marketing-ops",
         name: "Marketing Ops",
         type: "service",
         status: "active",
@@ -261,7 +263,7 @@ export function createInitialGatewayState(): GatewayState {
         errorRate24h: 0.01,
         keys: [
           {
-            id: "api_key_marketing_ops_primary",
+            id: "key-marketing-primary",
             label: "Primary",
             preview: "gw_mock_mkt_...A1B2",
             fingerprint: "mock-fp-marketing-ops-primary",
@@ -349,7 +351,7 @@ export function createInitialGatewayState(): GatewayState {
         id: "audit_0005",
         action: "api_key.rotated",
         targetType: "api_key",
-        targetId: "api_key_marketing_ops_primary",
+        targetId: "key-marketing-primary",
         detail: "Marketing Ops fixture key rotated.",
         actor: "fixture",
         timestamp: "2026-05-27T00:01:00.000Z"

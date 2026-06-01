@@ -185,12 +185,15 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
 
   rotateApiKey(clientId: string, keyId: string): ApiKey {
     const { client, key } = this.findApiKey(clientId, keyId);
+    if (key.status === "revoked") {
+      throw new Error(`Cannot rotate revoked API key: ${key.id}`);
+    }
+
     const token = String(this.keySequence++).padStart(4, "0");
     key.status = "active";
     key.rotatedAt = this.now();
     key.preview = `gw_mock_rotated_...${token}`;
     key.fingerprint = `mock-fp-${key.id}-${token}`;
-    delete key.revokedAt;
 
     this.writeAudit({
       action: "api_key.rotated",

@@ -49,6 +49,7 @@ export interface Connection {
   status: ConnectionStatus;
   configSummary: Record<string, string>;
   lastTestedAt?: string;
+  lastUsedAt?: string;
   lastError?: string;
 }
 
