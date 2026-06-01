@@ -44,6 +44,29 @@ npm run dev
 curl http://localhost:3000/health
 ```
 
+## Local admin UI prototype
+
+The Haverford Unified Gateway admin prototype is available at:
+
+```bash
+npm run dev
+open http://localhost:3000/admin
+```
+
+This milestone is fixture-data only. It proves the operator workflow before backend integration:
+
+- add brands
+- add regions under brands
+- add connections under brand/region
+- review connector backend options (`nango`, `composio`, `native`, `internal`)
+- view API clients
+- rotate and revoke mock keys
+- view mock usage and audit history
+
+The prototype does not call Nango, Composio, OAuth providers, native connectors, or persistent-volume storage.
+
+For deployment/backend phases, the source of truth must be persistent app data on the mounted volume, not deployment environment variables. Coolify env vars should stay limited to bootstrap/runtime inputs such as app secrets, Auth-Gate URL, initial admin/bootstrap token, and global provider credentials where required.
+
 To use the gateway from a Hermes profile, add this to the profile's overlay:
 
 ```yaml
