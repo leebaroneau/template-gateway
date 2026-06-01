@@ -3,6 +3,7 @@ export type EntityStatus = "active" | "disabled";
 export type ConnectionStatus = "needs_config" | "pending" | "connected" | "needs_reconnect" | "error";
 export type AuthMode = "oauth" | "api_key" | "service_account" | "none";
 export type ConnectorCategory = "commerce" | "analytics" | "marketing" | "crm" | "productivity" | "internal";
+export type MaybePromise<T> = T | Promise<T>;
 export type AuditAction =
   | "brand.created"
   | "region.created"
@@ -126,11 +127,11 @@ export interface CreateConnectionInput {
 }
 
 export interface GatewayConnectionBackend {
-  snapshot(): GatewayState;
-  createBrand(input: CreateBrandInput): Brand;
-  createRegion(input: CreateRegionInput): Region;
-  createConnection(input: CreateConnectionInput): Connection;
-  testConnection(connectionId: string): Connection;
-  rotateApiKey(clientId: string, keyId: string): ApiKey;
-  revokeApiKey(clientId: string, keyId: string): ApiKey;
+  snapshot(): MaybePromise<GatewayState>;
+  createBrand(input: CreateBrandInput): MaybePromise<Brand>;
+  createRegion(input: CreateRegionInput): MaybePromise<Region>;
+  createConnection(input: CreateConnectionInput): MaybePromise<Connection>;
+  testConnection(connectionId: string): MaybePromise<Connection>;
+  rotateApiKey(clientId: string, keyId: string): MaybePromise<ApiKey>;
+  revokeApiKey(clientId: string, keyId: string): MaybePromise<ApiKey>;
 }

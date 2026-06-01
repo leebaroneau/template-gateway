@@ -5,6 +5,16 @@ import { renderAdminClientScript } from "../src/admin/client-script.js";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
 import { createAdminRouter } from "../src/admin/routes.js";
 import { createApp } from "../src/index.js";
+import type {
+  ApiKey,
+  Brand,
+  Connection,
+  CreateBrandInput,
+  CreateConnectionInput,
+  CreateRegionInput,
+  GatewayConnectionBackend,
+  Region
+} from "../src/admin/types.js";
 import type { GatewayConfig } from "../src/config.js";
 
 function buildAdminApp(backend = new FixtureGatewayBackend()) {
@@ -12,6 +22,19 @@ function buildAdminApp(backend = new FixtureGatewayBackend()) {
   app.disable("x-powered-by");
   app.use("/admin", createAdminRouter(backend));
   return { app, backend };
+}
+
+function asyncBackendFromFixture(): GatewayConnectionBackend {
+  const fixture = new FixtureGatewayBackend();
+  return {
+    snapshot: async () => fixture.snapshot(),
+    createBrand: async (input: CreateBrandInput): Promise<Brand> => fixture.createBrand(input),
+    createRegion: async (input: CreateRegionInput): Promise<Region> => fixture.createRegion(input),
+    createConnection: async (input: CreateConnectionInput): Promise<Connection> => fixture.createConnection(input),
+    testConnection: async (connectionId: string): Promise<Connection> => fixture.testConnection(connectionId),
+    rotateApiKey: async (clientId: string, keyId: string): Promise<ApiKey> => fixture.rotateApiKey(clientId, keyId),
+    revokeApiKey: async (clientId: string, keyId: string): Promise<ApiKey> => fixture.revokeApiKey(clientId, keyId)
+  };
 }
 
 function testConfig(): GatewayConfig {
@@ -157,6 +180,38 @@ describe("admin routes", () => {
     expect(res.body.brands.length).toBeGreaterThanOrEqual(3);
     expect(res.body.connectors.length).toBeGreaterThanOrEqual(8);
     expect(res.body.connections.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("awaits async admin backends", async () => {
+    const app = express();
+    app.disable("x-powered-by");
+    app.use("/admin", createAdminRouter(asyncBackendFromFixture()));
+
+    const res = await request(app).get("/admin/api/state");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      brands: expect.arrayContaining([expect.objectContaining({ slug: "haverford" })]),
+      connectors: expect.arrayContaining([expect.objectContaining({ slug: "shopify" })])
+    });
+  });
+
+  it("returns JSON errors when async state loading fails", async () => {
+    const backend = {
+      ...asyncBackendFromFixture(),
+      snapshot: async () => {
+        throw new Error("snapshot failed");
+      }
+    } satisfies GatewayConnectionBackend;
+    const app = express();
+    app.disable("x-powered-by");
+    app.use("/admin", createAdminRouter(backend));
+
+    const res = await request(app).get("/admin/api/state");
+
+    expect(res.status).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.body).toEqual({ error: "snapshot failed" });
   });
 
   it("creates brands, regions, and connections with 201 responses and fresh state", async () => {
