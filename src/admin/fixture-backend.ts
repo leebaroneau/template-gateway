@@ -54,10 +54,9 @@ function nextNumericId(existingIds: string[]): number {
 const forbiddenRawSecretKeys = new Set(["accesstoken", "clientsecret", "refreshtoken", "authorization", "bearer"]);
 
 function safeReferenceKeysFor(fieldKey: string): string[] {
-  if (fieldKey === "credential_ref") {
-    return [fieldKey];
-  }
-  return [`${fieldKey}_ref`, "credential_ref"];
+  return [`${fieldKey}_ref`, "credential_ref"].filter(
+    (key, index, keys) => key !== fieldKey && keys.indexOf(key) === index
+  );
 }
 
 function normalizeConfigKey(key: string): string {

@@ -154,7 +154,12 @@ export function createInitialGatewayState(): GatewayState {
         backendOptions: ["internal"],
         requiredFields: [
           { key: "service", label: "Service", example: "gateway admin read model" },
-          { key: "credential_ref", label: "Credential reference", secret: true, example: "internal vault reference" }
+          {
+            key: "service_account_token",
+            label: "Service account token",
+            secret: true,
+            example: "stored in provider vault"
+          }
         ],
         scopes: ["gateway:read", "gateway:test"],
         description: "Internal Haverford service integration placeholder."
@@ -249,7 +254,7 @@ export function createInitialGatewayState(): GatewayState {
         backendType: "internal",
         displayName: "Haverford Dev API",
         status: "connected",
-        configSummary: { service: "gateway-admin", credential_ref: "internal fixture placeholder" },
+        configSummary: { service: "gateway-admin", service_account_token_ref: "internal fixture placeholder" },
         lastTestedAt: "2026-05-29T03:00:00.000Z"
       }
     ],

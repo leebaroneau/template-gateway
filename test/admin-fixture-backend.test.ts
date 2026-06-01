@@ -109,8 +109,9 @@ describe("FixtureGatewayBackend", () => {
 
       for (const field of connector!.requiredFields) {
         if (field.secret) {
-          const referenceKeys =
-            field.key === "credential_ref" ? ["credential_ref"] : [`${field.key}_ref`, "credential_ref"];
+          const referenceKeys = [`${field.key}_ref`, "credential_ref"].filter(
+            (key, index, keys) => key !== field.key && keys.indexOf(key) === index
+          );
           for (const key of referenceKeys) {
             allowedConfigKeys.add(key);
           }
@@ -381,6 +382,74 @@ describe("FixtureGatewayBackend", () => {
       expect(summary).not.toHaveProperty("password");
       expect(Object.values(summary)).not.toContain(rawToken);
       expect(Object.values(summary)).not.toContain(rawPassword);
+    }
+  });
+
+  it("does not return submitted raw Haverford Dev API tokens in connection summaries", () => {
+    const backend = new FixtureGatewayBackend();
+    const state = backend.snapshot();
+    const brand = state.brands.find((candidate) => candidate.slug === "haverford")!;
+    const region = state.regions.find((candidate) => candidate.brandId === brand.id && candidate.code === "AU")!;
+    const connector = state.connectors.find((candidate) => candidate.slug === "haverford-dev-api")!;
+    const rawToken = "hvd_raw_service_account_token_123";
+    const rawTokenWithCredentialRef = "hvd_raw_service_account_token_456";
+    const credentialRef = "vault://haverford/dev-api/gateway-admin";
+
+    expect(connector.requiredFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "service" }),
+        expect.objectContaining({ key: "service_account_token", secret: true })
+      ])
+    );
+    expect(connector.requiredFields).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "credential_ref", secret: true })])
+    );
+
+    const connection = backend.createConnection({
+      brandId: brand.id,
+      regionId: region.id,
+      connectorId: connector.id,
+      backendType: "internal",
+      displayName: "Sanitized Haverford Dev API",
+      configSummary: {
+        service: "gateway-admin",
+        service_account_token: rawToken
+      }
+    });
+    const stored = backend.snapshot().connections.find((candidate) => candidate.id === connection.id)!;
+
+    for (const summary of [connection.configSummary, stored.configSummary]) {
+      expect(summary).toEqual({
+        service: "gateway-admin",
+        service_account_token_ref: "fixture-redacted:service_account_token"
+      });
+      expect(summary).not.toHaveProperty("service_account_token");
+      expect(summary).not.toHaveProperty("credential_ref");
+      expect(Object.values(summary)).not.toContain(rawToken);
+    }
+
+    const referencedConnection = backend.createConnection({
+      brandId: brand.id,
+      regionId: region.id,
+      connectorId: connector.id,
+      backendType: "internal",
+      displayName: "Referenced Haverford Dev API",
+      configSummary: {
+        service: "gateway-admin",
+        service_account_token: rawTokenWithCredentialRef,
+        credential_ref: credentialRef
+      }
+    });
+    const storedReferenced = backend.snapshot().connections.find((candidate) => candidate.id === referencedConnection.id)!;
+
+    for (const summary of [referencedConnection.configSummary, storedReferenced.configSummary]) {
+      expect(summary).toEqual({
+        service: "gateway-admin",
+        credential_ref: credentialRef
+      });
+      expect(summary).not.toHaveProperty("service_account_token");
+      expect(summary).not.toHaveProperty("service_account_token_ref");
+      expect(Object.values(summary)).not.toContain(rawTokenWithCredentialRef);
     }
   });
 
