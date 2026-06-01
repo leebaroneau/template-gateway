@@ -56,8 +56,16 @@ describe("admin routes", () => {
     expect(js.status).toBe(200);
     expect(js.headers["content-type"]).toContain("javascript");
     expect(js.text).toContain("/admin/api/state");
-    expect(js.text).toContain("setup-flow");
-    expect(js.text).toContain("lifecycle");
+    expect(js.text).toContain('class="panel setup-flow" id="setup-flow"');
+    expect(js.text).toContain('class="setup-summary span-2"');
+    expect(js.text).toContain("<strong>Scopes</strong>");
+    expect(js.text).toContain("<strong>Supported backends</strong>");
+    expect(js.text).toContain('form data-action="create-connection"');
+    expect(js.text).toContain('select name="connectorId" data-control="connector"');
+    expect(js.text).toContain('select data-control="region" aria-label="Selected region"');
+    expect(js.text).toContain('data-action="test-connection"');
+    expect(js.text).toContain('data-action="rotate-key"');
+    expect(js.text).toContain('data-action="revoke-key"');
     expect(() => new Function(js.text)).not.toThrow();
   });
 
@@ -186,36 +194,46 @@ describe("admin routes", () => {
     expect(JSON.stringify(freshState.body)).not.toContain(rawReference);
   });
 
-  it("tests connections and rotates or revokes API keys", async () => {
+  it("tests connections and rotates or revokes API keys by stable fixture ID", async () => {
     const { app } = buildAdminApp();
     const stateRes = await request(app).get("/admin/api/state");
-    const connection = stateRes.body.connections.find((candidate: { status: string }) => candidate.status !== "connected");
+    const connection = stateRes.body.connections.find(
+      (candidate: { id: string }) => candidate.id === "conn-hav-nz-gsc"
+    );
     const client = stateRes.body.apiClients.find(
       (candidate: { id: string }) => candidate.id === "client-marketing-ops"
     );
-    const key = client.keys[0];
+    const key = client?.keys.find((candidate: { id: string }) => candidate.id === "key-marketing-primary");
 
-    const testRes = await request(app).post(`/admin/api/connections/${connection.id}/test`).send({});
+    expect(connection).toBeDefined();
+    expect(client).toBeDefined();
+    expect(key).toBeDefined();
+
+    const testRes = await request(app).post("/admin/api/connections/conn-hav-nz-gsc/test").send({});
     expect(testRes.status).toBe(200);
-    expect(testRes.body.connection).toMatchObject({ id: connection.id, status: "connected" });
+    expect(testRes.body.connection).toMatchObject({ id: "conn-hav-nz-gsc", status: "connected" });
     expect(testRes.body.connection.lastTestedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
     const rotateRes = await request(app)
-      .post(`/admin/api/api-clients/${client.id}/keys/${key.id}/rotate`)
+      .post("/admin/api/api-clients/client-marketing-ops/keys/key-marketing-primary/rotate")
       .send({});
     expect(rotateRes.status).toBe(200);
-    expect(rotateRes.body.key).toMatchObject({ id: key.id, status: "active" });
+    expect(rotateRes.body.key).toMatchObject({ id: "key-marketing-primary", status: "active" });
     expect(rotateRes.body.key.preview).not.toBe(key.preview);
 
     const revokeRes = await request(app)
-      .post(`/admin/api/api-clients/${client.id}/keys/${key.id}/revoke`)
+      .post("/admin/api/api-clients/client-marketing-ops/keys/key-marketing-primary/revoke")
       .send({});
     expect(revokeRes.status).toBe(200);
-    expect(revokeRes.body.key).toMatchObject({ id: key.id, status: "revoked" });
-    expect(revokeRes.body.state.auditEvents.slice(0, 3).map((event: { action: string }) => event.action)).toEqual([
-      "api_key.revoked",
-      "api_key.rotated",
-      "connection.tested"
+    expect(revokeRes.body.key).toMatchObject({ id: "key-marketing-primary", status: "revoked" });
+    expect(
+      revokeRes.body.state.auditEvents
+        .slice(0, 3)
+        .map((event: { action: string; targetId: string }) => ({ action: event.action, targetId: event.targetId }))
+    ).toEqual([
+      { action: "api_key.revoked", targetId: "key-marketing-primary" },
+      { action: "api_key.rotated", targetId: "key-marketing-primary" },
+      { action: "connection.tested", targetId: "conn-hav-nz-gsc" }
     ]);
   });
 
