@@ -196,9 +196,10 @@ describe("admin routes", () => {
 
   it("tests connections and rotates or revokes API keys by stable fixture ID", async () => {
     const { app } = buildAdminApp();
+    const lifecycleConnectionId = "connection_haverford_au_outlook";
     const stateRes = await request(app).get("/admin/api/state");
     const connection = stateRes.body.connections.find(
-      (candidate: { id: string }) => candidate.id === "conn-hav-nz-gsc"
+      (candidate: { id: string }) => candidate.id === lifecycleConnectionId
     );
     const client = stateRes.body.apiClients.find(
       (candidate: { id: string }) => candidate.id === "client-marketing-ops"
@@ -206,13 +207,18 @@ describe("admin routes", () => {
     const key = client?.keys.find((candidate: { id: string }) => candidate.id === "key-marketing-primary");
 
     expect(connection).toBeDefined();
+    expect(connection.status).not.toBe("connected");
     expect(client).toBeDefined();
     expect(key).toBeDefined();
 
-    const testRes = await request(app).post("/admin/api/connections/conn-hav-nz-gsc/test").send({});
+    const testRes = await request(app).post(`/admin/api/connections/${lifecycleConnectionId}/test`).send({});
     expect(testRes.status).toBe(200);
-    expect(testRes.body.connection).toMatchObject({ id: "conn-hav-nz-gsc", status: "connected" });
+    expect(testRes.body.connection).toMatchObject({ id: lifecycleConnectionId, status: "connected" });
     expect(testRes.body.connection.lastTestedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(testRes.body.state.auditEvents[0]).toMatchObject({
+      action: "connection.tested",
+      targetId: lifecycleConnectionId
+    });
 
     const rotateRes = await request(app)
       .post("/admin/api/api-clients/client-marketing-ops/keys/key-marketing-primary/rotate")
@@ -233,7 +239,7 @@ describe("admin routes", () => {
     ).toEqual([
       { action: "api_key.revoked", targetId: "key-marketing-primary" },
       { action: "api_key.rotated", targetId: "key-marketing-primary" },
-      { action: "connection.tested", targetId: "conn-hav-nz-gsc" }
+      { action: "connection.tested", targetId: lifecycleConnectionId }
     ]);
   });
 
