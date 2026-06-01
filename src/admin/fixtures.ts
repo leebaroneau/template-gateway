@@ -169,7 +169,10 @@ export function createInitialGatewayState(): GatewayState {
         backendType: "nango",
         displayName: "Haverford AU Shopify",
         status: "connected",
-        configSummary: { shop_domain: "haverford-au.myshopify.com", scopes: "orders,customers,products" },
+        configSummary: {
+          shop_domain: "haverford-au.myshopify.com",
+          access_token_ref: "fixture vault placeholder"
+        },
         lastTestedAt: "2026-05-29T05:00:00.000Z"
       },
       {
@@ -256,7 +259,16 @@ export function createInitialGatewayState(): GatewayState {
         name: "Marketing Ops",
         type: "service",
         status: "active",
-        scopes: ["brands.read", "connections.read", "audit.read", "api_clients.read"],
+        scopes: [
+          "brands.read",
+          "brands.write",
+          "regions.read",
+          "regions.write",
+          "connections.read",
+          "audit.read",
+          "api_clients.read",
+          "api_clients.write"
+        ],
         owner: "Marketing Ops",
         lastUsedAt: "2026-05-31T03:00:00.000Z",
         requestCount24h: 218,

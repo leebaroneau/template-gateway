@@ -88,6 +88,74 @@ describe("FixtureGatewayBackend", () => {
     expect(fresh.apiClients[0].keys[0].preview).not.toBe("mutated");
   });
 
+  it("seeded connections satisfy connector config requirements without raw secret keys", () => {
+    const state = createInitialGatewayState();
+    const forbiddenKeys = [
+      "accessToken",
+      "clientSecret",
+      "refreshToken",
+      "authorization",
+      "bearer",
+      "access_token",
+      "client_secret",
+      "refresh_token",
+      "private_api_key"
+    ];
+
+    for (const connection of state.connections) {
+      const connector = state.connectors.find((candidate) => candidate.id === connection.connectorId);
+      expect(connector, `Missing connector for ${connection.id}`).toBeDefined();
+      const allowedConfigKeys = new Set(["credential_ref"]);
+
+      for (const field of connector!.requiredFields) {
+        if (field.secret) {
+          const referenceKeys =
+            field.key === "credential_ref" ? ["credential_ref"] : [`${field.key}_ref`, "credential_ref"];
+          for (const key of referenceKeys) {
+            allowedConfigKeys.add(key);
+          }
+          expect(
+            referenceKeys.some((key) => connection.configSummary[key]?.trim()),
+            `${connection.id} must include a safe reference for ${field.key}`
+          ).toBe(true);
+        } else {
+          allowedConfigKeys.add(field.key);
+          expect(
+            connection.configSummary[field.key]?.trim(),
+            `${connection.id} must include required config field ${field.key}`
+          ).toBeTruthy();
+        }
+      }
+
+      expect(
+        Object.keys(connection.configSummary).filter((key) => !allowedConfigKeys.has(key)),
+        `${connection.id} should not include unknown config summary keys`
+      ).toEqual([]);
+      for (const key of forbiddenKeys) {
+        expect(connection.configSummary).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it("fixture API clients cover every approved gateway admin scope", () => {
+    const state = createInitialGatewayState();
+    const approvedScopes = [
+      "brands.read",
+      "brands.write",
+      "regions.read",
+      "regions.write",
+      "connectors.read",
+      "connections.read",
+      "connections.write",
+      "api_clients.read",
+      "api_clients.write",
+      "audit.read"
+    ];
+    const coveredScopes = new Set(state.apiClients.flatMap((client) => client.scopes));
+
+    expect(approvedScopes.filter((scope) => !coveredScopes.has(scope))).toEqual([]);
+  });
+
   it("adds a brand and records a brand.created audit event", () => {
     const backend = new FixtureGatewayBackend();
 
@@ -271,6 +339,48 @@ describe("FixtureGatewayBackend", () => {
       expect(summary).not.toHaveProperty("password");
       expect(Object.values(summary)).not.toContain(rawToken);
       expect(Object.values(summary)).not.toContain(rawPassword);
+    }
+  });
+
+  it("drops unknown config keys and camelCase raw secret keys", () => {
+    const backend = new FixtureGatewayBackend();
+    const { brand, region, connector } = getFixtureRefs(backend);
+    const rawValues = [
+      "shpat_camel_secret",
+      "client_secret_camel",
+      "refresh_secret_camel",
+      "Bearer fixture-token",
+      "fixture-bearer",
+      "looks display-safe but is unknown"
+    ];
+
+    const connection = backend.createConnection({
+      brandId: brand.id,
+      regionId: region.id,
+      connectorId: connector.id,
+      backendType: "composio",
+      displayName: "Sanitized Outlook",
+      configSummary: {
+        mailbox: "ops@haverford.example",
+        tenant: "Haverford Microsoft tenant",
+        accessToken: rawValues[0],
+        clientSecret: rawValues[1],
+        refreshToken: rawValues[2],
+        authorization: rawValues[3],
+        bearer: rawValues[4],
+        displayHint: rawValues[5]
+      }
+    });
+    const stored = backend.snapshot().connections.find((candidate) => candidate.id === connection.id)!;
+
+    for (const summary of [connection.configSummary, stored.configSummary]) {
+      expect(summary).toEqual({
+        mailbox: "ops@haverford.example",
+        tenant: "Haverford Microsoft tenant"
+      });
+      for (const value of rawValues) {
+        expect(Object.values(summary)).not.toContain(value);
+      }
     }
   });
 

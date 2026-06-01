@@ -51,23 +51,36 @@ function nextNumericId(existingIds: string[]): number {
   return max + 1;
 }
 
-function isSafeSecretReferenceKey(key: string): boolean {
-  const normalized = key.toLowerCase();
-  return normalized === "credential_ref" || normalized.endsWith("_ref");
-}
-
-function isSecretShapedConfigKey(key: string): boolean {
-  if (isSafeSecretReferenceKey(key)) {
-    return false;
-  }
-  return /(^|[_-])(api[_-]?key|credential|password|private|secret|token)([_-]|$)/i.test(key);
-}
+const genericSafeReferenceKeys = new Set(["credential_ref"]);
+const forbiddenRawSecretKeys = new Set(["accesstoken", "clientsecret", "refreshtoken", "authorization", "bearer"]);
 
 function safeReferenceKeysFor(fieldKey: string): string[] {
-  if (isSafeSecretReferenceKey(fieldKey)) {
+  if (genericSafeReferenceKeys.has(fieldKey)) {
     return [fieldKey];
   }
   return [`${fieldKey}_ref`, "credential_ref"];
+}
+
+function normalizeConfigKey(key: string): string {
+  return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function isForbiddenRawSecretKey(key: string): boolean {
+  return forbiddenRawSecretKeys.has(normalizeConfigKey(key));
+}
+
+function allowedConfigKeysFor(connector: Connector): Set<string> {
+  const allowed = new Set(genericSafeReferenceKeys);
+  for (const field of connector.requiredFields) {
+    if (field.secret) {
+      for (const key of safeReferenceKeysFor(field.key)) {
+        allowed.add(key);
+      }
+    } else {
+      allowed.add(field.key);
+    }
+  }
+  return allowed;
 }
 
 function firstNonEmptyConfigValue(
@@ -89,10 +102,11 @@ function sanitizeConnectionConfig(
 ): Record<string, string> {
   const input = configSummary ?? {};
   const sanitized: Record<string, string> = {};
+  const allowedConfigKeys = allowedConfigKeysFor(connector);
 
   for (const [key, value] of Object.entries(input)) {
     const trimmed = value.trim();
-    if (!trimmed || isSecretShapedConfigKey(key)) {
+    if (!trimmed || !allowedConfigKeys.has(key) || isForbiddenRawSecretKey(key)) {
       continue;
     }
     sanitized[key] = trimmed;
@@ -118,6 +132,9 @@ function sanitizeConnectionConfig(
     const value = input[field.key]?.trim();
     if (!value) {
       throw new Error(`Connector ${connector.slug} requires config field: ${field.key}`);
+    }
+    if (isForbiddenRawSecretKey(field.key)) {
+      throw new Error(`Connector ${connector.slug} requires unsafe config field: ${field.key}`);
     }
     sanitized[field.key] = value;
   }
