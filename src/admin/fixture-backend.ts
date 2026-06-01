@@ -84,27 +84,71 @@ function allowedConfigKeysFor(connector: Connector): Set<string> {
 }
 
 function firstNonEmptyConfigValue(
-  configSummary: Record<string, string>,
+  connector: Connector,
+  configSummary: Record<string, unknown>,
   keys: string[]
 ): { key: string; value: string } | undefined {
   for (const key of keys) {
-    const value = configSummary[key]?.trim();
-    if (value) {
-      return { key, value };
+    const value = configSummary[key];
+    if (typeof value !== "string") {
+      if (Object.prototype.hasOwnProperty.call(configSummary, key)) {
+        throw new Error(`Connector ${connector.slug} requires config field ${key} to be a string`);
+      }
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed) {
+      return { key, value: trimmed };
     }
   }
   return undefined;
 }
 
+function requiredConfigValue(connector: Connector, configSummary: Record<string, unknown>, key: string): string {
+  const value = configSummary[key];
+  if (typeof value !== "string") {
+    if (Object.prototype.hasOwnProperty.call(configSummary, key)) {
+      throw new Error(`Connector ${connector.slug} requires config field ${key} to be a string`);
+    }
+    throw new Error(`Connector ${connector.slug} requires config field: ${key}`);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`Connector ${connector.slug} requires config field: ${key}`);
+  }
+  return trimmed;
+}
+
+function optionalConfigValue(
+  connector: Connector,
+  configSummary: Record<string, unknown>,
+  key: string
+): string | undefined {
+  const value = configSummary[key];
+  if (typeof value !== "string") {
+    if (Object.prototype.hasOwnProperty.call(configSummary, key)) {
+      throw new Error(`Connector ${connector.slug} requires config field ${key} to be a string`);
+    }
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 function sanitizeConnectionConfig(
   connector: Connector,
-  configSummary: Record<string, string> | undefined
+  configSummary: Record<string, unknown> | undefined
 ): Record<string, string> {
   const input = configSummary ?? {};
   const sanitized: Record<string, string> = {};
   const allowedConfigKeys = allowedConfigKeysFor(connector);
 
   for (const [key, value] of Object.entries(input)) {
+    if (typeof value !== "string") {
+      continue;
+    }
     const trimmed = value.trim();
     if (!trimmed || !allowedConfigKeys.has(key) || isForbiddenRawSecretKey(key)) {
       continue;
@@ -114,13 +158,13 @@ function sanitizeConnectionConfig(
 
   for (const field of connector.requiredFields) {
     if (field.secret) {
-      const safeReference = firstNonEmptyConfigValue(input, safeReferenceKeysFor(field.key));
+      const safeReference = firstNonEmptyConfigValue(connector, input, safeReferenceKeysFor(field.key));
       if (safeReference) {
         sanitized[safeReference.key] = safeReference.value;
         continue;
       }
 
-      const rawSecret = input[field.key]?.trim();
+      const rawSecret = optionalConfigValue(connector, input, field.key);
       if (rawSecret) {
         sanitized[`${field.key}_ref`] = `fixture-redacted:${field.key}`;
         continue;
@@ -129,10 +173,7 @@ function sanitizeConnectionConfig(
       throw new Error(`Connector ${connector.slug} requires secret config reference: ${field.key}`);
     }
 
-    const value = input[field.key]?.trim();
-    if (!value) {
-      throw new Error(`Connector ${connector.slug} requires config field: ${field.key}`);
-    }
+    const value = requiredConfigValue(connector, input, field.key);
     if (isForbiddenRawSecretKey(field.key)) {
       throw new Error(`Connector ${connector.slug} requires unsafe config field: ${field.key}`);
     }

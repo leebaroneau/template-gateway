@@ -43,7 +43,7 @@ export interface Connector {
   backendOptions: GatewayBackendType[];
   requiredFields: ConnectorField[];
   scopes: string[];
-  description?: string;
+  description: string;
 }
 
 export interface Connection {
@@ -122,7 +122,7 @@ export interface CreateConnectionInput {
   connectorId: string;
   backendType: GatewayBackendType;
   displayName: string;
-  configSummary?: Record<string, string>;
+  configSummary?: Record<string, unknown>;
 }
 
 export interface GatewayConnectionBackend {

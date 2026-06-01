@@ -154,6 +154,7 @@ describe("FixtureGatewayBackend", () => {
     const coveredScopes = new Set(state.apiClients.flatMap((client) => client.scopes));
 
     expect(approvedScopes.filter((scope) => !coveredScopes.has(scope))).toEqual([]);
+    expect([...coveredScopes].filter((scope) => !approvedScopes.includes(scope))).toEqual([]);
   });
 
   it("adds a brand and records a brand.created audit event", () => {
@@ -261,7 +262,8 @@ describe("FixtureGatewayBackend", () => {
       authMode: "none",
       backendOptions: ["internal"],
       requiredFields: [],
-      scopes: []
+      scopes: [],
+      description: "Fixture-only health status connector."
     });
     const backend = new FixtureGatewayBackend(initial);
     const state = backend.snapshot();
@@ -305,6 +307,45 @@ describe("FixtureGatewayBackend", () => {
         configSummary: { mailbox: "   ", tenant: "Haverford Microsoft tenant" }
       })
     ).toThrow(/Connector outlook requires config field: mailbox/);
+  });
+
+  it("rejects non-string required config values with a clear validation error", () => {
+    const backend = new FixtureGatewayBackend();
+    const { brand, region, connector } = getFixtureRefs(backend);
+
+    expect(() =>
+      backend.createConnection({
+        brandId: brand.id,
+        regionId: region.id,
+        connectorId: connector.id,
+        backendType: "composio",
+        displayName: "Malformed Outlook Mailbox",
+        configSummary: { mailbox: 123, tenant: "Haverford Microsoft tenant" } as Record<string, unknown>
+      })
+    ).toThrow(/Connector outlook requires config field mailbox to be a string/);
+  });
+
+  it("drops unknown non-string config values while preserving valid required fields", () => {
+    const backend = new FixtureGatewayBackend();
+    const { brand, region, connector } = getFixtureRefs(backend);
+
+    const connection = backend.createConnection({
+      brandId: brand.id,
+      regionId: region.id,
+      connectorId: connector.id,
+      backendType: "composio",
+      displayName: "Unknown Non-string Outlook",
+      configSummary: {
+        mailbox: "ops@haverford.example",
+        tenant: "Haverford Microsoft tenant",
+        displayHint: 123
+      } as Record<string, unknown>
+    });
+
+    expect(connection.configSummary).toEqual({
+      mailbox: "ops@haverford.example",
+      tenant: "Haverford Microsoft tenant"
+    });
   });
 
   it("sanitizes raw secret config values before returning or storing a connection", () => {
