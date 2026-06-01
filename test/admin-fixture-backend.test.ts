@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
+import { createInitialGatewayState } from "../src/admin/fixtures.js";
 
 describe("FixtureGatewayBackend", () => {
   function getFixtureRefs(backend: FixtureGatewayBackend) {
@@ -163,7 +164,7 @@ describe("FixtureGatewayBackend", () => {
       connectorId: connector.id,
       backendType: "composio",
       displayName: "Haverford Outlook AU",
-      configSummary: { mailbox: "ops@haverford.example" }
+      configSummary: { mailbox: "ops@haverford.example", tenant: "Haverford Microsoft tenant" }
     });
 
     expect(connection).toMatchObject({
@@ -173,7 +174,7 @@ describe("FixtureGatewayBackend", () => {
       backendType: "composio",
       displayName: "Haverford Outlook AU",
       status: "pending",
-      configSummary: { mailbox: "ops@haverford.example" }
+      configSummary: { mailbox: "ops@haverford.example", tenant: "Haverford Microsoft tenant" }
     });
     expect(backend.snapshot().auditEvents[0]).toMatchObject({
       action: "connection.saved",
@@ -182,19 +183,114 @@ describe("FixtureGatewayBackend", () => {
     });
   });
 
-  it("adds an empty config summary when creating a connection without configSummary", () => {
+  it("adds an empty config summary for a connector with no required fields when configSummary is omitted", () => {
+    const initial = createInitialGatewayState();
+    initial.connectors.push({
+      id: "connector_fixture_status",
+      slug: "fixture-status",
+      name: "Fixture Status",
+      category: "internal",
+      authMode: "none",
+      backendOptions: ["internal"],
+      requiredFields: [],
+      scopes: []
+    });
+    const backend = new FixtureGatewayBackend(initial);
+    const state = backend.snapshot();
+    const brand = state.brands.find((candidate) => candidate.slug === "haverford")!;
+    const region = state.regions.find((candidate) => candidate.brandId === brand.id && candidate.code === "AU")!;
+    const connector = state.connectors.find((candidate) => candidate.slug === "fixture-status")!;
+
+    const connection = backend.createConnection({
+      brandId: brand.id,
+      regionId: region.id,
+      connectorId: connector.id,
+      backendType: "internal",
+      displayName: "Haverford Fixture Status"
+    });
+
+    expect(connection.configSummary).toEqual({});
+  });
+
+  it("requires non-empty config values for connector required fields", () => {
     const backend = new FixtureGatewayBackend();
     const { brand, region, connector } = getFixtureRefs(backend);
+
+    expect(() =>
+      backend.createConnection({
+        brandId: brand.id,
+        regionId: region.id,
+        connectorId: connector.id,
+        backendType: "composio",
+        displayName: "Missing Outlook Tenant",
+        configSummary: { mailbox: "ops@haverford.example" }
+      })
+    ).toThrow(/Connector outlook requires config field: tenant/);
+
+    expect(() =>
+      backend.createConnection({
+        brandId: brand.id,
+        regionId: region.id,
+        connectorId: connector.id,
+        backendType: "composio",
+        displayName: "Blank Outlook Mailbox",
+        configSummary: { mailbox: "   ", tenant: "Haverford Microsoft tenant" }
+      })
+    ).toThrow(/Connector outlook requires config field: mailbox/);
+  });
+
+  it("sanitizes raw secret config values before returning or storing a connection", () => {
+    const backend = new FixtureGatewayBackend();
+    const state = backend.snapshot();
+    const brand = state.brands.find((candidate) => candidate.slug === "haverford")!;
+    const region = state.regions.find((candidate) => candidate.brandId === brand.id && candidate.code === "AU")!;
+    const connector = state.connectors.find((candidate) => candidate.slug === "shopify")!;
+    const rawToken = "shpat_raw_secret_123";
+    const rawPassword = "submitted-password-value";
 
     const connection = backend.createConnection({
       brandId: brand.id,
       regionId: region.id,
       connectorId: connector.id,
       backendType: "nango",
-      displayName: "Haverford Outlook Nango"
+      displayName: "Sanitized Shopify",
+      configSummary: {
+        shop_domain: "haverford-au.myshopify.com",
+        access_token: rawToken,
+        password: rawPassword
+      }
     });
+    const stored = backend.snapshot().connections.find((candidate) => candidate.id === connection.id)!;
 
-    expect(connection.configSummary).toEqual({});
+    for (const summary of [connection.configSummary, stored.configSummary]) {
+      expect(summary).toMatchObject({
+        shop_domain: "haverford-au.myshopify.com",
+        access_token_ref: "fixture-redacted:access_token"
+      });
+      expect(summary).not.toHaveProperty("access_token");
+      expect(summary).not.toHaveProperty("password");
+      expect(Object.values(summary)).not.toContain(rawToken);
+      expect(Object.values(summary)).not.toContain(rawPassword);
+    }
+  });
+
+  it("requires secret connector fields to have a safe reference or a raw value to redact", () => {
+    const backend = new FixtureGatewayBackend();
+    const state = backend.snapshot();
+    const brand = state.brands.find((candidate) => candidate.slug === "haverford")!;
+    const region = state.regions.find((candidate) => candidate.brandId === brand.id && candidate.code === "AU")!;
+    const connector = state.connectors.find((candidate) => candidate.slug === "shopify")!;
+
+    expect(() =>
+      backend.createConnection({
+        brandId: brand.id,
+        regionId: region.id,
+        connectorId: connector.id,
+        backendType: "nango",
+        displayName: "Missing Shopify Token",
+        configSummary: { shop_domain: "haverford-au.myshopify.com" }
+      })
+    ).toThrow(/Connector shopify requires secret config reference: access_token/);
   });
 
   it("rejects region and brand mismatches in createConnection", () => {
@@ -296,6 +392,23 @@ describe("FixtureGatewayBackend", () => {
       preview: beforeKey.preview,
       fingerprint: beforeKey.fingerprint
     });
+    expect(afterState.auditEvents).toHaveLength(beforeState.auditEvents.length);
+  });
+
+  it("rejects revocation for already revoked API keys without mutating or auditing", () => {
+    const backend = new FixtureGatewayBackend();
+    const clientId = "api_client_reporting_worker";
+    const keyId = "api_key_reporting_worker_primary";
+    const beforeState = backend.snapshot();
+    const beforeClient = beforeState.apiClients.find((candidate) => candidate.id === clientId)!;
+    const beforeKey = beforeClient.keys.find((candidate) => candidate.id === keyId)!;
+
+    expect(() => backend.revokeApiKey(clientId, keyId)).toThrow(`Cannot revoke revoked API key: ${keyId}`);
+
+    const afterState = backend.snapshot();
+    const afterClient = afterState.apiClients.find((candidate) => candidate.id === clientId)!;
+    const afterKey = afterClient.keys.find((candidate) => candidate.id === keyId)!;
+    expect(afterKey).toEqual(beforeKey);
     expect(afterState.auditEvents).toHaveLength(beforeState.auditEvents.length);
   });
 

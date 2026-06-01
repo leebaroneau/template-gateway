@@ -3,6 +3,13 @@ export type EntityStatus = "active" | "disabled";
 export type ConnectionStatus = "needs_config" | "pending" | "connected" | "needs_reconnect" | "error";
 export type AuthMode = "oauth" | "api_key" | "service_account" | "none";
 export type ConnectorCategory = "commerce" | "analytics" | "marketing" | "crm" | "productivity" | "internal";
+export type AuditAction =
+  | "brand.created"
+  | "region.created"
+  | "connection.saved"
+  | "connection.tested"
+  | "api_key.rotated"
+  | "api_key.revoked";
 
 export interface Brand {
   id: string;
@@ -79,7 +86,7 @@ export interface ApiClient {
 
 export interface AuditEvent {
   id: string;
-  action: string;
+  action: AuditAction;
   targetType: "brand" | "region" | "connection" | "api_key" | "api_client";
   targetId: string;
   detail: string;

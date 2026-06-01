@@ -51,6 +51,80 @@ function nextNumericId(existingIds: string[]): number {
   return max + 1;
 }
 
+function isSafeSecretReferenceKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return normalized === "credential_ref" || normalized.endsWith("_ref");
+}
+
+function isSecretShapedConfigKey(key: string): boolean {
+  if (isSafeSecretReferenceKey(key)) {
+    return false;
+  }
+  return /(^|[_-])(api[_-]?key|credential|password|private|secret|token)([_-]|$)/i.test(key);
+}
+
+function safeReferenceKeysFor(fieldKey: string): string[] {
+  if (isSafeSecretReferenceKey(fieldKey)) {
+    return [fieldKey];
+  }
+  return [`${fieldKey}_ref`, "credential_ref"];
+}
+
+function firstNonEmptyConfigValue(
+  configSummary: Record<string, string>,
+  keys: string[]
+): { key: string; value: string } | undefined {
+  for (const key of keys) {
+    const value = configSummary[key]?.trim();
+    if (value) {
+      return { key, value };
+    }
+  }
+  return undefined;
+}
+
+function sanitizeConnectionConfig(
+  connector: Connector,
+  configSummary: Record<string, string> | undefined
+): Record<string, string> {
+  const input = configSummary ?? {};
+  const sanitized: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(input)) {
+    const trimmed = value.trim();
+    if (!trimmed || isSecretShapedConfigKey(key)) {
+      continue;
+    }
+    sanitized[key] = trimmed;
+  }
+
+  for (const field of connector.requiredFields) {
+    if (field.secret) {
+      const safeReference = firstNonEmptyConfigValue(input, safeReferenceKeysFor(field.key));
+      if (safeReference) {
+        sanitized[safeReference.key] = safeReference.value;
+        continue;
+      }
+
+      const rawSecret = input[field.key]?.trim();
+      if (rawSecret) {
+        sanitized[`${field.key}_ref`] = `fixture-redacted:${field.key}`;
+        continue;
+      }
+
+      throw new Error(`Connector ${connector.slug} requires secret config reference: ${field.key}`);
+    }
+
+    const value = input[field.key]?.trim();
+    if (!value) {
+      throw new Error(`Connector ${connector.slug} requires config field: ${field.key}`);
+    }
+    sanitized[field.key] = value;
+  }
+
+  return sanitized;
+}
+
 export class FixtureGatewayBackend implements GatewayConnectionBackend {
   private readonly state: GatewayState;
   private auditSequence: number;
@@ -140,6 +214,7 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
     }
 
     const displayName = requireText(input.displayName, "Connection displayName");
+    const configSummary = sanitizeConnectionConfig(connector, input.configSummary);
     const connection: Connection = {
       id: this.nextConnectionId(brand, region, connector, input.backendType),
       brandId: brand.id,
@@ -148,7 +223,7 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       backendType: input.backendType,
       displayName,
       status: "pending",
-      configSummary: cloneValue(input.configSummary ?? {})
+      configSummary
     };
 
     this.state.connections.push(connection);
@@ -207,6 +282,10 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
 
   revokeApiKey(clientId: string, keyId: string): ApiKey {
     const { client, key } = this.findApiKey(clientId, keyId);
+    if (key.status === "revoked") {
+      throw new Error(`Cannot revoke revoked API key: ${key.id}`);
+    }
+
     key.status = "revoked";
     key.revokedAt = this.now();
 
