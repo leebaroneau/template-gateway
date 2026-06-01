@@ -211,7 +211,7 @@ export function createInitialGatewayState(): GatewayState {
         backendType: "native",
         displayName: "Catnets AU Klaviyo",
         status: "connected",
-        configSummary: { account_id: "CAT-AU", private_api_key: "stored in fixture vault placeholder" },
+        configSummary: { account_id: "CAT-AU", private_api_key_ref: "fixture vault placeholder" },
         lastTestedAt: "2026-05-28T02:00:00.000Z"
       },
       {
@@ -254,7 +254,7 @@ export function createInitialGatewayState(): GatewayState {
         name: "Marketing Ops",
         type: "service",
         status: "active",
-        scopes: ["connections:read", "connections:test", "reports:read"],
+        scopes: ["brands.read", "connections.read", "audit.read", "api_clients.read"],
         owner: "Marketing Ops",
         lastUsedAt: "2026-05-31T03:00:00.000Z",
         requestCount24h: 218,
@@ -266,6 +266,7 @@ export function createInitialGatewayState(): GatewayState {
             preview: "gw_mock_mkt_...A1B2",
             fingerprint: "mock-fp-marketing-ops-primary",
             status: "active",
+            createdAt: "2026-05-26T00:01:00.000Z",
             rotatedAt: "2026-05-27T00:01:00.000Z"
           }
         ]
@@ -275,7 +276,7 @@ export function createInitialGatewayState(): GatewayState {
         name: "Shopify Sales",
         type: "service",
         status: "active",
-        scopes: ["connections:read", "commerce:read"],
+        scopes: ["brands.read", "connections.read", "connectors.read"],
         owner: "Sales Ops",
         lastUsedAt: "2026-05-31T01:15:00.000Z",
         requestCount24h: 95,
@@ -286,7 +287,8 @@ export function createInitialGatewayState(): GatewayState {
             label: "Primary",
             preview: "gw_mock_shp_...C3D4",
             fingerprint: "mock-fp-shopify-sales-primary",
-            status: "active"
+            status: "active",
+            createdAt: "2026-05-26T00:11:00.000Z"
           }
         ]
       },
@@ -295,7 +297,7 @@ export function createInitialGatewayState(): GatewayState {
         name: "Agent Gateway",
         type: "agent",
         status: "active",
-        scopes: ["connections:read", "connections:test", "audit:read"],
+        scopes: ["brands.read", "connectors.read", "connections.read", "connections.write", "audit.read"],
         owner: "Hermes Agents",
         lastUsedAt: "2026-05-31T04:30:00.000Z",
         requestCount24h: 782,
@@ -306,7 +308,8 @@ export function createInitialGatewayState(): GatewayState {
             label: "Primary",
             preview: "gw_mock_agent_...E5F6",
             fingerprint: "mock-fp-agent-gateway-primary",
-            status: "active"
+            status: "active",
+            createdAt: "2026-05-26T00:21:00.000Z"
           }
         ]
       },
@@ -315,7 +318,7 @@ export function createInitialGatewayState(): GatewayState {
         name: "Reporting Worker",
         type: "worker",
         status: "active",
-        scopes: ["connections:read", "reports:write"],
+        scopes: ["brands.read", "connections.read", "audit.read"],
         owner: "Reporting",
         requestCount24h: 0,
         errorRate24h: 0,
@@ -326,6 +329,7 @@ export function createInitialGatewayState(): GatewayState {
             preview: "gw_mock_report_...G7H8",
             fingerprint: "mock-fp-reporting-worker-primary",
             status: "revoked",
+            createdAt: "2026-05-26T00:31:00.000Z",
             revokedAt: "2026-05-28T00:31:00.000Z"
           }
         ]

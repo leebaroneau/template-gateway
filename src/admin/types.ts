@@ -47,7 +47,7 @@ export interface Connection {
   backendType: GatewayBackendType;
   displayName: string;
   status: ConnectionStatus;
-  configSummary?: Record<string, string>;
+  configSummary: Record<string, string>;
   lastTestedAt?: string;
   lastError?: string;
 }
@@ -58,6 +58,7 @@ export interface ApiKey {
   preview: string;
   fingerprint: string;
   status: "active" | "revoked";
+  createdAt: string;
   rotatedAt?: string;
   revokedAt?: string;
 }

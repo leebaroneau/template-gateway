@@ -41,14 +41,19 @@ describe("FixtureGatewayBackend", () => {
       type: "service",
       status: "active",
       owner: "Marketing Ops",
-      scopes: expect.arrayContaining(["connections:read"]),
+      scopes: expect.arrayContaining(["connections.read"]),
       requestCount24h: expect.any(Number),
       errorRate24h: expect.any(Number)
     });
     expect(marketingOps.keys[0]).toMatchObject({
       label: "Primary",
-      status: "active"
+      status: "active",
+      createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)
     });
+    expect(state.apiClients.flatMap((client) => client.scopes).some((scope) => scope.includes(":"))).toBe(false);
+    expect(
+      state.connections.flatMap((connection) => Object.keys(connection.configSummary)).some((key) => key === "private_api_key")
+    ).toBe(false);
     expect(state.auditEvents[0]).toMatchObject({
       targetType: expect.any(String),
       targetId: expect.any(String),
@@ -166,6 +171,21 @@ describe("FixtureGatewayBackend", () => {
     });
   });
 
+  it("adds an empty config summary when creating a connection without configSummary", () => {
+    const backend = new FixtureGatewayBackend();
+    const { brand, region, connector } = getFixtureRefs(backend);
+
+    const connection = backend.createConnection({
+      brandId: brand.id,
+      regionId: region.id,
+      connectorId: connector.id,
+      backendType: "nango",
+      displayName: "Haverford Outlook Nango"
+    });
+
+    expect(connection.configSummary).toEqual({});
+  });
+
   it("rejects region and brand mismatches in createConnection", () => {
     const backend = new FixtureGatewayBackend();
     const state = backend.snapshot();
@@ -227,14 +247,16 @@ describe("FixtureGatewayBackend", () => {
 
     expect(rotated).toMatchObject({
       id: key.id,
-      status: "active"
+      status: "active",
+      createdAt: key.createdAt
     });
     expect(rotated.rotatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(rotated.preview).not.toBe(key.preview);
     expect(rotated.fingerprint).not.toBe(key.fingerprint);
     expect(revoked).toMatchObject({
       id: key.id,
-      status: "revoked"
+      status: "revoked",
+      createdAt: key.createdAt
     });
     expect(revoked.revokedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(auditEvents.slice(0, 2).map((event) => event.action)).toEqual([

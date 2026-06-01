@@ -147,11 +147,9 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       connectorId: connector.id,
       backendType: input.backendType,
       displayName,
-      status: "pending"
+      status: "pending",
+      configSummary: cloneValue(input.configSummary ?? {})
     };
-    if (input.configSummary) {
-      connection.configSummary = cloneValue(input.configSummary);
-    }
 
     this.state.connections.push(connection);
     this.writeAudit({
