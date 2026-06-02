@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response } from "express";
+import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
 import { renderAdminPage } from "./page.js";
@@ -25,7 +26,7 @@ function configSummaryFromBody(body: any): Record<string, unknown> | undefined {
 }
 
 function sendError(res: Response, error: unknown): void {
-  res.status(400).json({ error: errorMessage(error) });
+  res.status(statusCodeForAdminError(error)).json({ error: errorMessage(error) });
 }
 
 function noStore(res: Response): void {
