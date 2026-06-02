@@ -13,6 +13,7 @@ describe("loadConfig", () => {
     delete process.env.AUTH_CONFIGS;
     delete process.env.PORT;
     delete process.env.SESSION_TTL_SECONDS;
+    delete process.env.NODE_ENV;
     delete process.env.ADMIN_DATA_SOURCE;
     delete process.env.GATEWAY_STORE_PATH;
     delete process.env.HAVERFORD_DEV_API_BASE_URL;
@@ -107,6 +108,19 @@ describe("loadConfig", () => {
 
     expect(cfg.adminDataSource).toBe("fixture-overlay");
     expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
+  });
+
+  it("uses the deployment data volume as the production overlay store default", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "fixture-overlay",
+      NODE_ENV: "production"
+    });
+
+    expect(cfg.adminDataSource).toBe("fixture-overlay");
+    expect(cfg.gatewayStorePath).toBe("/data/gateway.sqlite");
   });
 
   it("rejects invalid admin data sources", () => {

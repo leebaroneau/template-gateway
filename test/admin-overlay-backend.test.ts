@@ -203,6 +203,54 @@ describe("OverlayGatewayBackend", () => {
       400,
       /Unsafe config field: accessToken/
     );
+    await expectAdminError(
+      second.backend.updateConnection("connection_haverford_au_outlook", {
+        configSummary: { api_key: "raw-api-key" }
+      }),
+      400,
+      /Unsafe config field: api_key/
+    );
+    await expectAdminError(
+      second.backend.updateConnection("connection_haverford_au_outlook", {
+        configSummary: { secret: "raw-secret" }
+      }),
+      400,
+      /Unsafe config field: secret/
+    );
+  });
+
+  it("does not create source overrides or audit events for no-op updates", async () => {
+    const { backend, store } = createBackend();
+
+    const emptyUpdate = await backend.updateBrand("brand_haverford", {});
+    const sameValueUpdate = await backend.updateBrand("brand_haverford", {
+      name: "Haverford",
+      status: "active"
+    });
+    const state = await backend.snapshot();
+
+    expect(emptyUpdate).toMatchObject({ id: "brand_haverford", name: "Haverford", status: "active" });
+    expect(sameValueUpdate).toMatchObject({ id: "brand_haverford", name: "Haverford", status: "active" });
+    expect(state.entityMeta?.find((meta) => meta.entityType === "brand" && meta.entityId === "brand_haverford")).toMatchObject({
+      hasOverride: false,
+      overrideFields: []
+    });
+    expect(store.listAuditEvents()).toEqual([]);
+    expect(store.listOverrides()).toEqual([]);
+  });
+
+  it("does not write gateway-owned rows or audit events for unchanged updates", async () => {
+    const { backend, store } = createBackend();
+    const brand = await backend.createBrand({ name: "Gateway Noop", slug: "gateway-noop" });
+    const auditAfterCreate = store.listAuditEvents();
+
+    const unchanged = await backend.updateBrand(brand.id, {
+      name: brand.name,
+      status: brand.status
+    });
+
+    expect(unchanged).toEqual(brand);
+    expect(store.listAuditEvents()).toEqual(auditAfterCreate);
   });
 
   it("redacts connector-declared secret fields and references during config updates", async () => {

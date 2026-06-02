@@ -55,18 +55,30 @@ describe("admin input validation", () => {
         refresh_token: "raw-refresh-token"
       })
     ).toThrow(/Unsafe config field: refresh_token/);
+
+    expect(() =>
+      sanitizePartialConfigSummary({
+        api_key: "raw-api-key"
+      })
+    ).toThrow(/Unsafe config field: api_key/);
+
+    expect(() =>
+      sanitizePartialConfigSummary({
+        secret: "raw-secret"
+      })
+    ).toThrow(/Unsafe config field: secret/);
   });
 
   it("keeps safe partial config summary keys as trimmed strings", () => {
     expect(
       sanitizePartialConfigSummary({
         property_id: " properties/123 ",
-        credential_ref: " gateway:google/default ",
+        account_ref: " gateway:google/default ",
         empty: " "
       })
     ).toEqual({
       property_id: "properties/123",
-      credential_ref: "gateway:google/default"
+      account_ref: "gateway:google/default"
     });
   });
 });

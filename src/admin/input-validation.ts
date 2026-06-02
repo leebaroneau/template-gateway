@@ -1,15 +1,7 @@
 import type { Connector } from "./types.js";
 
-const forbiddenRawSecretKeys = new Set([
-  "accesstoken",
-  "clientsecret",
-  "refreshtoken",
-  "authorization",
-  "bearer",
-  "password",
-  "privateapikey",
-  "serviceaccounttoken"
-]);
+const secretLikeKeyPattern =
+  /(token|secret|password|(?:private|consumer|app|api)[_-]?key|credential[_-]?ref|service[_-]?account[_-]?json|authorization|bearer)/i;
 
 export function requireText(value: unknown, label: string): string {
   if (typeof value !== "string") {
@@ -58,7 +50,7 @@ function normalizeConfigKey(key: string): string {
 }
 
 export function isForbiddenRawSecretKey(key: string): boolean {
-  return forbiddenRawSecretKeys.has(normalizeConfigKey(key));
+  return secretLikeKeyPattern.test(key) || secretLikeKeyPattern.test(normalizeConfigKey(key));
 }
 
 function allowedConfigKeysFor(connector: Connector): Set<string> {

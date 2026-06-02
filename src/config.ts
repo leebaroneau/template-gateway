@@ -95,6 +95,9 @@ function parseGatewayStorePath(env: NodeJS.ProcessEnv, dataSource: AdminDataSour
     return configured;
   }
   if (dataSource === "fixture-overlay" || dataSource === "dev-api-overlay") {
+    if (env.NODE_ENV === "production") {
+      return "/data/gateway.sqlite";
+    }
     return "./data/gateway.sqlite";
   }
   return "./data/gateway.sqlite";

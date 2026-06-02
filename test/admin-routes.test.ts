@@ -719,4 +719,20 @@ describe("admin routes", () => {
     expect(res.headers["content-type"]).toContain("application/json");
     expect(res.body).toEqual({ error: "configSummary must be an object" });
   });
+
+  it("returns 400 JSON when patching a connection with raw secret-like config keys", async () => {
+    const { app } = buildAdminApp();
+    const rawSecret = "route-raw-api-key";
+
+    const res = await request(app).patch("/admin/api/connections/connection_haverford_au_outlook").send({
+      configSummary: { api_key: rawSecret }
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.body).toEqual({ error: "Unsafe config field: api_key" });
+
+    const freshState = await request(app).get("/admin/api/state");
+    expect(JSON.stringify(freshState.body)).not.toContain(rawSecret);
+  });
 });

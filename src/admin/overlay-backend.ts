@@ -138,6 +138,20 @@ function sanitizeConnectionConfigUpdate(
   return sanitized;
 }
 
+function hasPatchValues(patch: Record<string, unknown>): boolean {
+  return Object.keys(patch).length > 0;
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function stringRecordsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+}
+
 function storedMeta(
   entityType: GatewayEntityType,
   record: StoredEntity<Brand | Region | Connection>
@@ -308,7 +322,10 @@ export class OverlayGatewayBackend implements GatewayConnectionBackend {
         if (input.slug !== undefined) {
           throw new AdminBackendError(409, "Cannot edit source-owned brand identity fields.");
         }
-        const patch = this.brandPatch(input);
+        const patch = this.changedBrandPatch(brand, this.brandPatch(input));
+        if (!hasPatchValues(patch)) {
+          return cloneValue(brand);
+        }
         const updated = this.applyBrandPatch(brand, patch);
         this.validateBrandSlugAfterUpdate(snapshot.state.brands, updated);
         this.upsertSourceOverride(snapshot, "brand", brandId, patch);
@@ -320,7 +337,11 @@ export class OverlayGatewayBackend implements GatewayConnectionBackend {
       if (!record) {
         throw new AdminBackendError(404, `Unknown brand: ${brandId}`);
       }
-      const updated = this.applyBrandPatch(record.value, this.brandPatch(input));
+      const patch = this.changedBrandPatch(record.value, this.brandPatch(input));
+      if (!hasPatchValues(patch)) {
+        return cloneValue(record.value);
+      }
+      const updated = this.applyBrandPatch(record.value, patch);
       this.validateBrandSlugAfterUpdate(snapshot.state.brands, updated);
       const stored = this.store.updateBrand(updated, this.actor).value;
       this.auditUpdated("brand", brandId, `${stored.name} brand updated.`, { source: "gateway" });
@@ -338,7 +359,10 @@ export class OverlayGatewayBackend implements GatewayConnectionBackend {
         if (input.code !== undefined) {
           throw new AdminBackendError(409, "Cannot edit source-owned region identity fields.");
         }
-        const patch = this.regionPatch(input);
+        const patch = this.changedRegionPatch(region, this.regionPatch(input));
+        if (!hasPatchValues(patch)) {
+          return cloneValue(region);
+        }
         const updated = this.applyRegionPatch(region, patch);
         this.validateRegionCodeAfterUpdate(snapshot.state.regions, updated);
         this.upsertSourceOverride(snapshot, "region", regionId, patch);
@@ -350,7 +374,11 @@ export class OverlayGatewayBackend implements GatewayConnectionBackend {
       if (!record) {
         throw new AdminBackendError(404, `Unknown region: ${regionId}`);
       }
-      const updated = this.applyRegionPatch(record.value, this.regionPatch(input));
+      const patch = this.changedRegionPatch(record.value, this.regionPatch(input));
+      if (!hasPatchValues(patch)) {
+        return cloneValue(record.value);
+      }
+      const updated = this.applyRegionPatch(record.value, patch);
       this.findBrand(snapshot.state, updated.brandId);
       this.validateRegionCodeAfterUpdate(snapshot.state.regions, updated);
       const stored = this.store.updateRegion(updated, this.actor).value;
@@ -365,7 +393,10 @@ export class OverlayGatewayBackend implements GatewayConnectionBackend {
     try {
       const snapshot = await this.readMergedSnapshot();
       const connection = this.findConnection(snapshot.state, connectionId);
-      const patch = this.connectionPatch(snapshot.state, connection, input);
+      const patch = this.changedConnectionPatch(connection, this.connectionPatch(snapshot.state, connection, input));
+      if (!hasPatchValues(patch)) {
+        return cloneValue(connection);
+      }
       const updated = this.applyConnectionPatch(connection, patch);
       this.validateConnectionReferences(snapshot.state, updated);
 
@@ -625,6 +656,47 @@ export class OverlayGatewayBackend implements GatewayConnectionBackend {
       patch.lastError = requireText(input.lastError, "Connection error note");
     }
     return patch;
+  }
+
+  private changedBrandPatch(current: Brand, patch: Partial<Brand>): Partial<Brand> {
+    const changed: Partial<Brand> = {};
+    if (patch.name !== undefined && patch.name !== current.name) changed.name = patch.name;
+    if (patch.slug !== undefined && patch.slug !== current.slug) changed.slug = patch.slug;
+    if (patch.status !== undefined && patch.status !== current.status) changed.status = patch.status;
+    return changed;
+  }
+
+  private changedRegionPatch(current: Region, patch: Partial<Region>): Partial<Region> {
+    const changed: Partial<Region> = {};
+    if (patch.code !== undefined && patch.code !== current.code) changed.code = patch.code;
+    if (patch.name !== undefined && patch.name !== current.name) changed.name = patch.name;
+    if (patch.status !== undefined && patch.status !== current.status) changed.status = patch.status;
+    if (hasOwn(patch as Record<string, unknown>, "domain")) {
+      const nextDomain = patch.domain === null ? undefined : patch.domain;
+      if (nextDomain !== current.domain) {
+        changed.domain = nextDomain ?? (null as unknown as string);
+      }
+    }
+    return changed;
+  }
+
+  private changedConnectionPatch(current: Connection, patch: Partial<Connection>): Partial<Connection> {
+    const changed: Partial<Connection> = {};
+    if (patch.backendType !== undefined && patch.backendType !== current.backendType) changed.backendType = patch.backendType;
+    if (patch.displayName !== undefined && patch.displayName !== current.displayName) changed.displayName = patch.displayName;
+    if (patch.status !== undefined && patch.status !== current.status) changed.status = patch.status;
+    if (this.isConfigSummary(patch.configSummary) && !stringRecordsEqual(patch.configSummary, current.configSummary)) {
+      changed.configSummary = patch.configSummary;
+    }
+    if (patch.lastTestedAt !== undefined && patch.lastTestedAt !== current.lastTestedAt) changed.lastTestedAt = patch.lastTestedAt;
+    if (patch.lastUsedAt !== undefined && patch.lastUsedAt !== current.lastUsedAt) changed.lastUsedAt = patch.lastUsedAt;
+    if (hasOwn(patch as Record<string, unknown>, "lastError")) {
+      const nextLastError = patch.lastError === null ? undefined : patch.lastError;
+      if (nextLastError !== current.lastError) {
+        changed.lastError = nextLastError ?? (null as unknown as string);
+      }
+    }
+    return changed;
   }
 
   private applyBrandPatch(brand: Brand, patch: Record<string, unknown>): Brand {

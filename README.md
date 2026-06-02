@@ -96,12 +96,14 @@ npm run dev
 source records, while the gateway stores edits, new records, and source
 overrides in SQLite.
 
-For production deployments, mount a persistent app data volume and set
-`GATEWAY_STORE_PATH=/data/gateway.sqlite`. Overlay modes store gateway-owned
-records and source overrides in SQLite; they do not wire real OAuth, Nango,
-Composio, or native connector execution yet. Coolify env vars should stay
-limited to bootstrap/runtime inputs such as app secrets, Auth-Gate URL, initial
-admin/bootstrap token, and global provider credentials where required.
+For production deployments, mount a persistent app data volume at `/data`.
+Overlay modes default to `GATEWAY_STORE_PATH=/data/gateway.sqlite` when
+`NODE_ENV=production`; set the variable explicitly if a deployment uses another
+mounted path. Overlay modes store gateway-owned records and source overrides in
+SQLite; they do not wire real OAuth, Nango, Composio, or native connector
+execution yet. Coolify env vars should stay limited to bootstrap/runtime inputs
+such as app secrets, Auth-Gate URL, initial admin/bootstrap token, and global
+provider credentials where required.
 
 To use the gateway from a Hermes profile, add this to the profile's overlay:
 
