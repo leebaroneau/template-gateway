@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AdminBackendError } from "../src/admin/backend-error.js";
 import { renderAdminClientScript } from "../src/admin/client-script.js";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
 import { createAdminRouter } from "../src/admin/routes.js";
@@ -17,7 +18,7 @@ import type {
 } from "../src/admin/types.js";
 import type { GatewayConfig } from "../src/config.js";
 
-function buildAdminApp(backend = new FixtureGatewayBackend()) {
+function buildAdminApp(backend: GatewayConnectionBackend = new FixtureGatewayBackend()) {
   const app = express();
   app.disable("x-powered-by");
   app.use("/admin", createAdminRouter(backend));
@@ -349,6 +350,153 @@ describe("admin routes", () => {
     });
   });
 
+  it("patches brands, regions, and connections through the backend and returns fresh state", async () => {
+    const baseBackend = asyncBackendFromFixture();
+    const backend = {
+      ...baseBackend,
+      updateBrand: vi.fn(async (brandId, input) => baseBackend.updateBrand(brandId, input)),
+      updateRegion: vi.fn(async (regionId, input) => baseBackend.updateRegion(regionId, input)),
+      updateConnection: vi.fn(async (connectionId, input) => baseBackend.updateConnection(connectionId, input))
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend);
+
+    const brandRes = await request(app).patch("/admin/api/brands/brand_haverford").send({
+      name: "Haverford Route Updated",
+      status: "disabled"
+    });
+    const regionRes = await request(app).patch("/admin/api/regions/region_haverford_au").send({
+      name: "Australia Route Updated",
+      domain: "routes.haverford.example"
+    });
+    const connectionRes = await request(app).patch("/admin/api/connections/connection_haverford_au_outlook").send({
+      displayName: "Route Updated Outlook",
+      status: "needs_config",
+      configSummary: {
+        mailbox: "ops@routes.example"
+      },
+      lastError: null
+    });
+
+    expect(brandRes.status).toBe(200);
+    expect(backend.updateBrand).toHaveBeenCalledWith("brand_haverford", {
+      name: "Haverford Route Updated",
+      status: "disabled"
+    });
+    expect(brandRes.body.brand).toMatchObject({ id: "brand_haverford", name: "Haverford Route Updated" });
+    expect(brandRes.body.state.brands).toContainEqual(brandRes.body.brand);
+
+    expect(regionRes.status).toBe(200);
+    expect(backend.updateRegion).toHaveBeenCalledWith("region_haverford_au", {
+      name: "Australia Route Updated",
+      domain: "routes.haverford.example"
+    });
+    expect(regionRes.body.region).toMatchObject({ id: "region_haverford_au", name: "Australia Route Updated" });
+    expect(regionRes.body.state.regions).toContainEqual(regionRes.body.region);
+
+    expect(connectionRes.status).toBe(200);
+    expect(backend.updateConnection).toHaveBeenCalledWith("connection_haverford_au_outlook", {
+      displayName: "Route Updated Outlook",
+      status: "needs_config",
+      configSummary: {
+        mailbox: "ops@routes.example"
+      },
+      lastError: null
+    });
+    expect(connectionRes.body.connection).toMatchObject({
+      id: "connection_haverford_au_outlook",
+      displayName: "Route Updated Outlook",
+      configSummary: {
+        mailbox: "ops@routes.example"
+      }
+    });
+    expect(connectionRes.body.state.connections).toContainEqual(connectionRes.body.connection);
+  });
+
+  it("resets entities through the backend and returns the reset state", async () => {
+    const baseBackend = asyncBackendFromFixture();
+    const backend = {
+      ...baseBackend,
+      resetEntity: vi.fn(async (input) => ({
+        ...(await baseBackend.snapshot()),
+        brands: [{ id: "brand_reset", slug: "reset", name: "Reset State", status: "active" }]
+      }))
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend);
+
+    const res = await request(app).post("/admin/api/entities/reset").send({
+      entityType: "brand",
+      entityId: "brand_haverford"
+    });
+
+    expect(res.status).toBe(200);
+    expect(backend.resetEntity).toHaveBeenCalledWith({ entityType: "brand", entityId: "brand_haverford" });
+    expect(res.body).toMatchObject({
+      state: {
+        brands: [{ id: "brand_reset", slug: "reset", name: "Reset State", status: "active" }]
+      }
+    });
+  });
+
+  it("returns 400 JSON when patching entities with array bodies", async () => {
+    const backend = {
+      ...asyncBackendFromFixture(),
+      updateBrand: vi.fn(),
+      updateRegion: vi.fn(),
+      updateConnection: vi.fn()
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend);
+
+    const brandRes = await request(app).patch("/admin/api/brands/brand_haverford").send([]);
+    const regionRes = await request(app).patch("/admin/api/regions/region_haverford_au").send([]);
+    const connectionRes = await request(app).patch("/admin/api/connections/connection_haverford_au_outlook").send([]);
+
+    for (const res of [brandRes, regionRes, connectionRes]) {
+      expect(res.status).toBe(400);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.body).toEqual({ error: "Request body must be an object" });
+    }
+    expect(backend.updateBrand).not.toHaveBeenCalled();
+    expect(backend.updateRegion).not.toHaveBeenCalled();
+    expect(backend.updateConnection).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 JSON when resetting entities with array or null bodies", async () => {
+    const backend = {
+      ...asyncBackendFromFixture(),
+      resetEntity: vi.fn()
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend);
+
+    const arrayRes = await request(app).post("/admin/api/entities/reset").send([]);
+    const nullRes = await request(app)
+      .post("/admin/api/entities/reset")
+      .set("Content-Type", "application/json")
+      .send("null");
+
+    for (const res of [arrayRes, nullRes]) {
+      expect(res.status).toBe(400);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.body).toEqual({ error: "Request body must be an object" });
+    }
+    expect(backend.resetEntity).not.toHaveBeenCalled();
+  });
+
+  it("surfaces backend conflict errors with their status code", async () => {
+    const backend = {
+      ...asyncBackendFromFixture(),
+      updateBrand: vi.fn(async () => {
+        throw new AdminBackendError(409, "Cannot edit source-owned brand identity fields.");
+      })
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend);
+
+    const res = await request(app).patch("/admin/api/brands/brand_haverford").send({ slug: "renamed" });
+
+    expect(res.status).toBe(409);
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.body).toEqual({ error: "Cannot edit source-owned brand identity fields." });
+  });
+
   it("does not echo raw submitted secret or reference values in connection responses or state", async () => {
     const { app } = buildAdminApp();
     const stateRes = await request(app).get("/admin/api/state");
@@ -455,5 +603,17 @@ describe("admin routes", () => {
     expect(badConnection.status).toBe(400);
     expect(badConnection.headers["content-type"]).toContain("application/json");
     expect(badConnection.body.error).toMatch(/configSummary|requires/);
+  });
+
+  it("returns 400 JSON when patching a connection with a non-object configSummary", async () => {
+    const { app } = buildAdminApp();
+
+    const res = await request(app).patch("/admin/api/connections/connection_haverford_au_outlook").send({
+      configSummary: ["not", "an", "object"]
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.body).toEqual({ error: "configSummary must be an object" });
   });
 });

@@ -11,6 +11,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function requestBodyObject(body: unknown): Record<string, any> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Request body must be an object");
+  }
+  return body as Record<string, any>;
+}
+
 function configSummaryFromBody(body: any): Record<string, unknown> | undefined {
   if (!Object.prototype.hasOwnProperty.call(body ?? {}, "configSummary")) {
     return undefined;
@@ -36,7 +43,7 @@ function noStore(res: Response): void {
 export function createAdminRouter(backend: GatewayConnectionBackend = new FixtureGatewayBackend()): express.Router {
   const router = express.Router();
 
-  router.use(express.json({ limit: "256kb" }));
+  router.use(express.json({ limit: "256kb", strict: false }));
 
   router.get("/", (_req: Request, res: Response) => {
     noStore(res);
@@ -72,6 +79,20 @@ export function createAdminRouter(backend: GatewayConnectionBackend = new Fixtur
     }
   });
 
+  router.patch("/api/brands/:brandId", async (req: Request, res: Response) => {
+    try {
+      const body = requestBodyObject(req.body);
+      const brand = await backend.updateBrand(req.params.brandId, {
+        name: body?.name,
+        slug: body?.slug,
+        status: body?.status
+      });
+      res.json({ brand, state: await backend.snapshot() });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.post("/api/brands/:brandId/regions", async (req: Request, res: Response) => {
     try {
       const body = req.body as any;
@@ -82,6 +103,21 @@ export function createAdminRouter(backend: GatewayConnectionBackend = new Fixtur
         domain: body?.domain
       });
       res.status(201).json({ region, state: await backend.snapshot() });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.patch("/api/regions/:regionId", async (req: Request, res: Response) => {
+    try {
+      const body = requestBodyObject(req.body);
+      const region = await backend.updateRegion(req.params.regionId, {
+        code: body?.code,
+        name: body?.name,
+        domain: body?.domain,
+        status: body?.status
+      });
+      res.json({ region, state: await backend.snapshot() });
     } catch (error) {
       sendError(res, error);
     }
@@ -104,10 +140,36 @@ export function createAdminRouter(backend: GatewayConnectionBackend = new Fixtur
     }
   });
 
+  router.patch("/api/connections/:connectionId", async (req: Request, res: Response) => {
+    try {
+      const body = requestBodyObject(req.body);
+      const connection = await backend.updateConnection(req.params.connectionId, {
+        backendType: body?.backendType,
+        displayName: body?.displayName,
+        status: body?.status,
+        configSummary: configSummaryFromBody(body),
+        lastError: body?.lastError
+      });
+      res.json({ connection, state: await backend.snapshot() });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.post("/api/connections/:connectionId/test", async (req: Request, res: Response) => {
     try {
       const connection = await backend.testConnection(req.params.connectionId);
       res.json({ connection, state: await backend.snapshot() });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/api/entities/reset", async (req: Request, res: Response) => {
+    try {
+      const body = requestBodyObject(req.body);
+      const state = await backend.resetEntity({ entityType: body.entityType, entityId: body.entityId });
+      res.json({ state });
     } catch (error) {
       sendError(res, error);
     }
