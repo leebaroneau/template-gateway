@@ -5,9 +5,15 @@ import { loadConfig } from "./config.js";
 import { actorContext, bearerAuth } from "./auth.js";
 import { SessionCache } from "./session-cache.js";
 import { forwardJsonRpc, makeComposioSessionFactory } from "./mcp-proxy.js";
+import { buildAdminBackend } from "./admin/backend-factory.js";
 import { createAdminRouter } from "./admin/routes.js";
+import type { GatewayConnectionBackend } from "./admin/types.js";
 
-export function createApp(config = loadConfig()) {
+interface CreateAppOptions {
+  adminBackend?: GatewayConnectionBackend;
+}
+
+export function createApp(config = loadConfig(), options: CreateAppOptions = {}) {
   const factory = makeComposioSessionFactory({
     composioApiKey: config.composioApiKey,
     composioProjectId: config.composioProjectId,
@@ -27,7 +33,7 @@ export function createApp(config = loadConfig()) {
     });
   });
 
-  app.use("/admin", createAdminRouter());
+  app.use("/admin", createAdminRouter(options.adminBackend ?? buildAdminBackend(config)));
 
   const mcpRouter = express.Router();
   mcpRouter.use(express.json({ limit: "1mb" }));

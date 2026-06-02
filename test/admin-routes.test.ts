@@ -70,6 +70,34 @@ describe("admin routes", () => {
     expect(health.body).toMatchObject({ status: "ok", brand: "haverford" });
   });
 
+  it("lets createApp mount an injected admin backend for local smoke tests", async () => {
+    const fixtureBackend = asyncBackendFromFixture();
+    const injectedBackend = {
+      ...fixtureBackend,
+      snapshot: async () => {
+        const fixtureState = await fixtureBackend.snapshot();
+        return {
+          ...fixtureState,
+          brands: [{ id: "brand_injected", slug: "injected-only", name: "Injected Only", status: "active" }],
+          regions: [],
+          connections: []
+        };
+      }
+    } satisfies GatewayConnectionBackend;
+    const app = createApp(testConfig(), { adminBackend: injectedBackend });
+
+    const res = await request(app).get("/admin/api/state");
+    const brandSlugs = res.body.brands.map((brand: { slug: string }) => brand.slug);
+
+    expect(res.status).toBe(200);
+    expect(brandSlugs).toContain("injected-only");
+    expect(brandSlugs).not.toContain("haverford");
+  });
+
+  it("requires Dev API settings when createApp uses the dev-api admin data source", () => {
+    expect(() => createApp({ ...testConfig(), adminDataSource: "dev-api" })).toThrow(/HAVERFORD_DEV_API_BASE_URL/);
+  });
+
   it("serves admin CSS and browser JavaScript assets", async () => {
     const { app } = buildAdminApp();
 
