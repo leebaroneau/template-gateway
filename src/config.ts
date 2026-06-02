@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-export type AdminDataSource = "fixture" | "dev-api";
+export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-api-overlay";
 
 export interface GatewayConfig {
   composioApiKey: string;
@@ -12,6 +12,7 @@ export interface GatewayConfig {
   port: number;
   sessionTtlSeconds: number;
   adminDataSource: AdminDataSource;
+  gatewayStorePath: string;
   haverfordDevApiBaseUrl?: string;
   haverfordDevApiClientId?: string;
   haverfordDevApiClientSecret?: string;
@@ -77,13 +78,31 @@ function parseSessionTtl(raw?: string): number {
 function parseAdminDataSource(raw?: string): AdminDataSource {
   if (!raw) return "fixture";
   const value = raw.trim().toLowerCase();
-  if (value === "fixture" || value === "dev-api") {
+  if (
+    value === "fixture" ||
+    value === "dev-api" ||
+    value === "fixture-overlay" ||
+    value === "dev-api-overlay"
+  ) {
     return value;
   }
-  throw new Error(`ADMIN_DATA_SOURCE must be fixture or dev-api (got ${raw})`);
+  throw new Error(`ADMIN_DATA_SOURCE must be fixture, dev-api, fixture-overlay, or dev-api-overlay (got ${raw})`);
+}
+
+function parseGatewayStorePath(env: NodeJS.ProcessEnv, dataSource: AdminDataSource): string {
+  const configured = optionalEnv(env, "GATEWAY_STORE_PATH");
+  if (configured) {
+    return configured;
+  }
+  if (dataSource === "fixture-overlay" || dataSource === "dev-api-overlay") {
+    return "./data/gateway.sqlite";
+  }
+  return "./data/gateway.sqlite";
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
+  const adminDataSource = parseAdminDataSource(env.ADMIN_DATA_SOURCE);
+
   return {
     composioApiKey: requireEnv(env, "COMPOSIO_API_KEY"),
     composioProjectId: optionalEnv(env, "COMPOSIO_PROJECT_ID"),
@@ -93,7 +112,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     authConfigs: parseAuthConfigs(env.AUTH_CONFIGS),
     port: parsePort(env.PORT),
     sessionTtlSeconds: parseSessionTtl(env.SESSION_TTL_SECONDS),
-    adminDataSource: parseAdminDataSource(env.ADMIN_DATA_SOURCE),
+    adminDataSource,
+    gatewayStorePath: parseGatewayStorePath(env, adminDataSource),
     haverfordDevApiBaseUrl: optionalEnv(env, "HAVERFORD_DEV_API_BASE_URL"),
     haverfordDevApiClientId: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_ID"),
     haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET")

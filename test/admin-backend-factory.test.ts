@@ -10,6 +10,7 @@ function baseConfig(overrides: Partial<GatewayConfig> = {}): GatewayConfig {
     port: 3000,
     sessionTtlSeconds: 3600,
     adminDataSource: "fixture",
+    gatewayStorePath: "./data/gateway.sqlite",
     ...overrides
   };
 }

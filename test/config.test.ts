@@ -14,6 +14,7 @@ describe("loadConfig", () => {
     delete process.env.PORT;
     delete process.env.SESSION_TTL_SECONDS;
     delete process.env.ADMIN_DATA_SOURCE;
+    delete process.env.GATEWAY_STORE_PATH;
     delete process.env.HAVERFORD_DEV_API_BASE_URL;
     delete process.env.HAVERFORD_DEV_API_CLIENT_ID;
     delete process.env.HAVERFORD_DEV_API_CLIENT_SECRET;
@@ -43,6 +44,7 @@ describe("loadConfig", () => {
     expect(cfg.sessionTtlSeconds).toBe(3600);
     expect(cfg.toolkitAllowlist).toBeUndefined();
     expect(cfg.adminDataSource).toBe("fixture");
+    expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
   });
 
   it("parses Dev API admin data source settings", () => {
@@ -77,6 +79,34 @@ describe("loadConfig", () => {
     expect(cfg.haverfordDevApiBaseUrl).toBe("https://dev-api.haverford.au");
     expect(cfg.haverfordDevApiClientId).toBe("gateway-admin");
     expect(cfg.haverfordDevApiClientSecret).toBe("secret");
+  });
+
+  it("parses overlay admin data source settings with a store path", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "dev-api-overlay",
+      GATEWAY_STORE_PATH: " ./data/test-gateway.sqlite ",
+      HAVERFORD_DEV_API_BASE_URL: "https://dev-api.haverford.au",
+      HAVERFORD_DEV_API_CLIENT_ID: "gateway-admin",
+      HAVERFORD_DEV_API_CLIENT_SECRET: "secret"
+    });
+
+    expect(cfg.adminDataSource).toBe("dev-api-overlay");
+    expect(cfg.gatewayStorePath).toBe("./data/test-gateway.sqlite");
+  });
+
+  it("uses a local gateway store path default for overlay modes", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "fixture-overlay"
+    });
+
+    expect(cfg.adminDataSource).toBe("fixture-overlay");
+    expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
   });
 
   it("rejects invalid admin data sources", () => {
