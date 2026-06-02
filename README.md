@@ -46,9 +46,10 @@ curl http://localhost:3000/health
 
 ## Local admin UI prototype
 
-The Haverford Unified Gateway admin prototype supports two local backend modes.
-Fixture mode is the default and runs fully locally without a live Dev API,
-Composio session, OAuth provider, native connector, or persistent-volume store:
+The Haverford Unified Gateway admin prototype supports four admin data modes.
+`fixture` is the default local, non-persistent prototype mode. It runs without a
+live Dev API, Composio session, OAuth provider, native connector, or app data
+volume:
 
 ```bash
 COMPOSIO_API_KEY=ak_local_dummy \
@@ -64,7 +65,20 @@ Open `http://localhost:3000/admin`.
 Fixture mode proves the operator workflow: brands, regions, connections,
 backend options, API clients, mock key rotation/revocation, and audit.
 
-Dev API read-through mode reads configured admin data from Haverford Dev API:
+Use `fixture-overlay` for local persistence without a running Haverford Dev API:
+
+```bash
+COMPOSIO_API_KEY=ak_local_dummy \
+BRAND_SLUG=haverford \
+GATEWAY_BEARER=a_secret_thats_long_enough \
+ADMIN_DATA_SOURCE=fixture-overlay \
+GATEWAY_STORE_PATH=./data/gateway.sqlite \
+PORT=3000 \
+npm run dev
+```
+
+Dev API read-through mode reads configured admin data from Haverford Dev API and
+is read-only in this phase:
 
 ```bash
 COMPOSIO_API_KEY=ak_local_dummy \
@@ -78,11 +92,16 @@ PORT=3000 \
 npm run dev
 ```
 
-Dev API mode is read-only in this phase. It displays brands, regions, and
-configured service connections from `/api/internal/brands`; create, test,
-rotate, and revoke remain fixture-mode only until the persistent gateway store.
+`dev-api-overlay` is the transition path: Haverford Dev API supplies imported
+source records, while the gateway stores edits, new records, and source
+overrides in SQLite.
 
-For deployment/backend phases, the source of truth must be persistent app data on the mounted volume, not deployment environment variables. Coolify env vars should stay limited to bootstrap/runtime inputs such as app secrets, Auth-Gate URL, initial admin/bootstrap token, and global provider credentials where required.
+For production deployments, mount a persistent app data volume and set
+`GATEWAY_STORE_PATH=/data/gateway.sqlite`. Overlay modes store gateway-owned
+records and source overrides in SQLite; they do not wire real OAuth, Nango,
+Composio, or native connector execution yet. Coolify env vars should stay
+limited to bootstrap/runtime inputs such as app secrets, Auth-Gate URL, initial
+admin/bootstrap token, and global provider credentials where required.
 
 To use the gateway from a Hermes profile, add this to the profile's overlay:
 
@@ -103,10 +122,11 @@ mybrand:
 | `BRAND_SLUG` | yes | Brand slug, e.g. `haverford` or `genvest`; default `user_id` when header missing |
 | `GATEWAY_BEARER` | yes | Shared secret for Hermes ↔ gateway auth (≥16 chars) |
 | `COMPOSIO_PROJECT_ID` | no | Constrain to a specific Composio project |
-| `ADMIN_DATA_SOURCE` | no | Admin backend mode; defaults to `fixture` |
-| `HAVERFORD_DEV_API_BASE_URL` | only when `ADMIN_DATA_SOURCE=dev-api` | Base URL for Haverford Dev API read-through mode |
-| `HAVERFORD_DEV_API_CLIENT_ID` | only when `ADMIN_DATA_SOURCE=dev-api` | Internal client id sent to Haverford Dev API |
-| `HAVERFORD_DEV_API_CLIENT_SECRET` | only when `ADMIN_DATA_SOURCE=dev-api` | Internal client secret sent to Haverford Dev API |
+| `ADMIN_DATA_SOURCE` | no | Admin backend mode: `fixture`, `fixture-overlay`, `dev-api`, or `dev-api-overlay`; defaults to `fixture` |
+| `GATEWAY_STORE_PATH` | overlay modes | SQLite path for overlay persistence; use `/data/gateway.sqlite` on a mounted deployment volume |
+| `HAVERFORD_DEV_API_BASE_URL` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Base URL for Haverford Dev API read-through mode |
+| `HAVERFORD_DEV_API_CLIENT_ID` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Internal client id sent to Haverford Dev API |
+| `HAVERFORD_DEV_API_CLIENT_SECRET` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Internal client secret sent to Haverford Dev API |
 | `TOOLKIT_ALLOWLIST` | no | Comma-separated, e.g. `outlook,one_drive,pipedrive` — defaults to all toolkits the API key sees |
 | `PORT` | no | Default `3000` |
 | `SESSION_TTL_SECONDS` | no | Tool Router session cache TTL; default `3600`, min `60` |

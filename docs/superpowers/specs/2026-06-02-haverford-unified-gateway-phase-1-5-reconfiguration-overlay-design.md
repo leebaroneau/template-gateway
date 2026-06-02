@@ -1,6 +1,6 @@
 # Haverford Unified Gateway Phase 1.5 Reconfiguration Overlay - Design Spec
 
-**Status:** written for Lee review  
+**Status:** approved for implementation
 **Issue:** [#19](https://github.com/leebaroneau/template-gateway/issues/19)  
 **Date:** 2026-06-02  
 **Repo:** `leebaroneau/template-gateway`  
@@ -376,6 +376,16 @@ Local verification:
 - Run `npm run build`.
 - Start local gateway in `fixture-overlay` and confirm edits survive restart.
 - Start local gateway in `dev-api-overlay` against local Dev API and confirm imported record overrides work.
+
+Task 8 verification record:
+
+- `npm test` passed: 12 files / 127 tests.
+- `npm run typecheck` passed.
+- `npm run build` passed.
+- Fixture-overlay persistence smoke passed.
+- Smoke used port `3003` because `3002` was occupied.
+- Smoke used temp store path `/tmp/template-gateway-overlay-smoke.0k5hUM/gateway-smoke.sqlite`.
+- Created `Smoke Overlay` / `smoke-overlay`, restarted with the same SQLite path, verified it persisted via `/admin/api/state`, then stopped the server and removed the temp directory.
 
 ## Acceptance Criteria
 
