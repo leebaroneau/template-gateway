@@ -10,6 +10,10 @@ import type {
   CreateRegionInput,
   GatewayConnectionBackend,
   GatewayState,
+  ResetEntityInput,
+  UpdateBrandInput,
+  UpdateConnectionInput,
+  UpdateRegionInput,
   Region
 } from "./types.js";
 
@@ -34,6 +38,22 @@ export class DevApiGatewayBackend implements GatewayConnectionBackend {
 
   createConnection(_input: CreateConnectionInput): Promise<Connection> {
     return Promise.reject(readOnlyError("create connection"));
+  }
+
+  updateBrand(_brandId: string, _input: UpdateBrandInput): Promise<Brand> {
+    return Promise.reject(readOnlyError("update brand"));
+  }
+
+  updateRegion(_regionId: string, _input: UpdateRegionInput): Promise<Region> {
+    return Promise.reject(readOnlyError("update region"));
+  }
+
+  updateConnection(_connectionId: string, _input: UpdateConnectionInput): Promise<Connection> {
+    return Promise.reject(readOnlyError("update connection"));
+  }
+
+  resetEntity(_input: ResetEntityInput): Promise<GatewayState> {
+    return Promise.reject(readOnlyError("reset entity"));
   }
 
   testConnection(_connectionId: string): Promise<Connection> {

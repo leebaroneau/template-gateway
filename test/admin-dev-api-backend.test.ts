@@ -211,6 +211,29 @@ describe("DevApiGatewayBackend", () => {
           displayName: "Shopify"
         })
     ],
+    [
+      "updateBrand",
+      () => new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).updateBrand("brand_haverford", { name: "Updated" })
+    ],
+    [
+      "updateRegion",
+      () => new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).updateRegion("region_haverford_au", { name: "Updated" })
+    ],
+    [
+      "updateConnection",
+      () =>
+        new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).updateConnection("connection_1", {
+          displayName: "Updated"
+        })
+    ],
+    [
+      "resetEntity",
+      () =>
+        new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).resetEntity({
+          entityType: "brand",
+          entityId: "brand_haverford"
+        })
+    ],
     ["testConnection", () => new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).testConnection("connection_1")],
     ["rotateApiKey", () => new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).rotateApiKey("client_1", "key_1")],
     ["revokeApiKey", () => new DevApiGatewayBackend({ fetchBrands: async () => devApiBrandsResponse() }).revokeApiKey("client_1", "key_1")]
@@ -246,6 +269,18 @@ describe("admin route error statuses", () => {
         throw new Error("unused");
       },
       createConnection: async () => {
+        throw new Error("unused");
+      },
+      updateBrand: async () => {
+        throw new Error("unused");
+      },
+      updateRegion: async () => {
+        throw new Error("unused");
+      },
+      updateConnection: async () => {
+        throw new Error("unused");
+      },
+      resetEntity: async () => {
         throw new Error("unused");
       },
       testConnection: async () => {

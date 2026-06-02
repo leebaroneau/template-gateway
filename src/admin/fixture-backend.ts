@@ -4,7 +4,8 @@ import {
   normalizeSlug,
   optionalText,
   requireText,
-  sanitizeConnectionConfig
+  sanitizeConnectionConfig,
+  sanitizePartialConfigSummary
 } from "./input-validation.js";
 import type {
   ApiClient,
@@ -12,13 +13,19 @@ import type {
   AuditEvent,
   Brand,
   Connection,
+  ConnectionStatus,
   Connector,
   CreateBrandInput,
   CreateConnectionInput,
   CreateRegionInput,
+  EntityStatus,
   GatewayBackendType,
   GatewayConnectionBackend,
   GatewayState,
+  ResetEntityInput,
+  UpdateBrandInput,
+  UpdateConnectionInput,
+  UpdateRegionInput,
   Region
 } from "./types.js";
 
@@ -32,6 +39,21 @@ function nextNumericId(existingIds: string[]): number {
     return match ? Math.max(currentMax, Number(match[1])) : currentMax;
   }, 0);
   return max + 1;
+}
+
+const entityStatuses: EntityStatus[] = ["active", "disabled"];
+const connectionStatuses: ConnectionStatus[] = ["needs_config", "pending", "connected", "needs_reconnect", "error"];
+
+function optionalEntityStatus(value: unknown): EntityStatus | undefined {
+  if (value === undefined) return undefined;
+  if (entityStatuses.includes(value as EntityStatus)) return value as EntityStatus;
+  throw new Error(`Invalid entity status: ${String(value)}`);
+}
+
+function optionalConnectionStatus(value: unknown): ConnectionStatus | undefined {
+  if (value === undefined) return undefined;
+  if (connectionStatuses.includes(value as ConnectionStatus)) return value as ConnectionStatus;
+  throw new Error(`Invalid connection status: ${String(value)}`);
 }
 
 export class FixtureGatewayBackend implements GatewayConnectionBackend {
@@ -152,6 +174,92 @@ export class FixtureGatewayBackend implements GatewayConnectionBackend {
       }
     });
     return cloneValue(connection);
+  }
+
+  updateBrand(brandId: string, input: UpdateBrandInput): Brand {
+    const brand = this.findBrand(brandId);
+    const name = optionalText(input.name, "Brand name");
+    const status = optionalEntityStatus(input.status);
+    if (input.slug !== undefined) {
+      const slug = normalizeSlug(input.slug, "Brand slug");
+      if (!slug) {
+        throw new Error("Brand slug is required");
+      }
+      if (this.state.brands.some((candidate) => candidate.id !== brand.id && candidate.slug === slug)) {
+        throw new Error(`Duplicate brand slug: ${slug}`);
+      }
+      brand.slug = slug;
+    }
+    if (name) brand.name = name;
+    if (status) brand.status = status;
+    this.writeAudit({
+      action: "brand.updated",
+      targetType: "brand",
+      targetId: brand.id,
+      detail: `${brand.name} brand updated.`,
+      metadata: { slug: brand.slug }
+    });
+    return cloneValue(brand);
+  }
+
+  updateRegion(regionId: string, input: UpdateRegionInput): Region {
+    const region = this.findRegion(regionId);
+    const code = input.code === undefined ? undefined : normalizeRegionCode(input.code);
+    const name = optionalText(input.name, "Region name");
+    const domain = optionalText(input.domain, "Region domain");
+    const status = optionalEntityStatus(input.status);
+    if (code) {
+      if (this.state.regions.some((candidate) => candidate.id !== region.id && candidate.brandId === region.brandId && candidate.code === code)) {
+        throw new Error(`Duplicate region code for ${region.brandId}: ${code}`);
+      }
+      region.code = code;
+    }
+    if (name) region.name = name;
+    if (input.domain !== undefined) {
+      if (domain) region.domain = domain;
+      else delete region.domain;
+    }
+    if (status) region.status = status;
+    this.writeAudit({
+      action: "region.updated",
+      targetType: "region",
+      targetId: region.id,
+      detail: `${region.code} region updated.`,
+      metadata: { brandId: region.brandId }
+    });
+    return cloneValue(region);
+  }
+
+  updateConnection(connectionId: string, input: UpdateConnectionInput): Connection {
+    const connection = this.findConnection(connectionId);
+    const displayName = optionalText(input.displayName, "Connection display name");
+    const status = optionalConnectionStatus(input.status);
+    if (input.backendType !== undefined) {
+      const connector = this.findConnector(connection.connectorId);
+      if (!connector.backendOptions.includes(input.backendType)) {
+        throw new Error(`Connector ${connector.slug} does not support backend ${input.backendType}`);
+      }
+      connection.backendType = input.backendType;
+    }
+    if (displayName) connection.displayName = displayName;
+    if (status) connection.status = status;
+    if (input.configSummary !== undefined) {
+      connection.configSummary = sanitizePartialConfigSummary(input.configSummary);
+    }
+    if (input.lastError === null) delete connection.lastError;
+    else if (input.lastError !== undefined) connection.lastError = requireText(input.lastError, "Connection error note");
+    this.writeAudit({
+      action: "connection.updated",
+      targetType: "connection",
+      targetId: connection.id,
+      detail: `${connection.displayName} connection updated.`,
+      metadata: { connectorId: connection.connectorId }
+    });
+    return cloneValue(connection);
+  }
+
+  resetEntity(_input: ResetEntityInput): GatewayState {
+    throw new Error("Fixture backend has no source override to reset.");
   }
 
   testConnection(connectionId: string): Connection {

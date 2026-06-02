@@ -31,6 +31,10 @@ function asyncBackendFromFixture(): GatewayConnectionBackend {
     createBrand: async (input: CreateBrandInput): Promise<Brand> => fixture.createBrand(input),
     createRegion: async (input: CreateRegionInput): Promise<Region> => fixture.createRegion(input),
     createConnection: async (input: CreateConnectionInput): Promise<Connection> => fixture.createConnection(input),
+    updateBrand: async (brandId, input) => fixture.updateBrand(brandId, input),
+    updateRegion: async (regionId, input) => fixture.updateRegion(regionId, input),
+    updateConnection: async (connectionId, input) => fixture.updateConnection(connectionId, input),
+    resetEntity: async (input) => fixture.resetEntity(input),
     testConnection: async (connectionId: string): Promise<Connection> => fixture.testConnection(connectionId),
     rotateApiKey: async (clientId: string, keyId: string): Promise<ApiKey> => fixture.rotateApiKey(clientId, keyId),
     revokeApiKey: async (clientId: string, keyId: string): Promise<ApiKey> => fixture.revokeApiKey(clientId, keyId)
@@ -83,6 +87,18 @@ describe("admin routes", () => {
           regions: [],
           connections: []
         };
+      },
+      updateBrand: async () => {
+        throw new Error("unused");
+      },
+      updateRegion: async () => {
+        throw new Error("unused");
+      },
+      updateConnection: async () => {
+        throw new Error("unused");
+      },
+      resetEntity: async () => {
+        throw new Error("unused");
       }
     } satisfies GatewayConnectionBackend;
     const app = createApp(testConfig(), { adminBackend: injectedBackend });
@@ -231,6 +247,18 @@ describe("admin routes", () => {
       ...asyncBackendFromFixture(),
       snapshot: async () => {
         throw new Error("snapshot failed");
+      },
+      updateBrand: async () => {
+        throw new Error("unused");
+      },
+      updateRegion: async () => {
+        throw new Error("unused");
+      },
+      updateConnection: async () => {
+        throw new Error("unused");
+      },
+      resetEntity: async () => {
+        throw new Error("unused");
       }
     } satisfies GatewayConnectionBackend;
     const app = express();
@@ -300,6 +328,25 @@ describe("admin routes", () => {
       }
     });
     expect(connectionRes.body.state.connections).toContainEqual(connectionRes.body.connection);
+  });
+
+  it("updates fixture brands, regions, and connections in memory", async () => {
+    const { backend } = buildAdminApp();
+    const brand = backend.updateBrand("brand_haverford", { name: "Haverford Updated", status: "disabled" });
+    const region = backend.updateRegion("region_haverford_au", { name: "Australia Updated", domain: "updated.example" });
+    const connection = backend.updateConnection("connection_haverford_au_outlook", {
+      displayName: "Updated Outlook",
+      status: "needs_config",
+      configSummary: { mailbox: "updated@example.com" }
+    });
+
+    expect(brand).toMatchObject({ name: "Haverford Updated", status: "disabled" });
+    expect(region).toMatchObject({ name: "Australia Updated", domain: "updated.example" });
+    expect(connection).toMatchObject({
+      displayName: "Updated Outlook",
+      status: "needs_config",
+      configSummary: { mailbox: "updated@example.com" }
+    });
   });
 
   it("does not echo raw submitted secret or reference values in connection responses or state", async () => {

@@ -1,4 +1,6 @@
 export type GatewayBackendType = "nango" | "composio" | "native" | "internal";
+export type GatewayEntitySource = "dev_api" | "gateway" | "fixture";
+export type GatewayEntityType = "brand" | "region" | "connection";
 export type EntityStatus = "active" | "disabled";
 export type ConnectionStatus = "needs_config" | "pending" | "connected" | "needs_reconnect" | "error";
 export type AuthMode = "oauth" | "api_key" | "service_account" | "none";
@@ -6,9 +8,13 @@ export type ConnectorCategory = "commerce" | "analytics" | "marketing" | "crm" |
 export type MaybePromise<T> = T | Promise<T>;
 export type AuditAction =
   | "brand.created"
+  | "brand.updated"
   | "region.created"
+  | "region.updated"
   | "connection.saved"
+  | "connection.updated"
   | "connection.tested"
+  | "entity.reset"
   | "api_key.rotated"
   | "api_key.revoked";
 
@@ -96,6 +102,17 @@ export interface AuditEvent {
   metadata?: Record<string, string>;
 }
 
+export interface GatewayEntityMeta {
+  entityType: GatewayEntityType;
+  entityId: string;
+  source: GatewayEntitySource;
+  hasOverride: boolean;
+  overrideFields: string[];
+  sourceLabel: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface GatewayState {
   brands: Brand[];
   regions: Region[];
@@ -103,6 +120,7 @@ export interface GatewayState {
   connections: Connection[];
   apiClients: ApiClient[];
   auditEvents: AuditEvent[];
+  entityMeta?: GatewayEntityMeta[];
 }
 
 export interface CreateBrandInput {
@@ -126,11 +144,41 @@ export interface CreateConnectionInput {
   configSummary?: Record<string, unknown>;
 }
 
+export interface UpdateBrandInput {
+  name?: string;
+  slug?: string;
+  status?: EntityStatus;
+}
+
+export interface UpdateRegionInput {
+  code?: string;
+  name?: string;
+  domain?: string;
+  status?: EntityStatus;
+}
+
+export interface UpdateConnectionInput {
+  backendType?: GatewayBackendType;
+  displayName?: string;
+  status?: ConnectionStatus;
+  configSummary?: Record<string, unknown>;
+  lastError?: string | null;
+}
+
+export interface ResetEntityInput {
+  entityType: GatewayEntityType;
+  entityId: string;
+}
+
 export interface GatewayConnectionBackend {
   snapshot(): MaybePromise<GatewayState>;
   createBrand(input: CreateBrandInput): MaybePromise<Brand>;
   createRegion(input: CreateRegionInput): MaybePromise<Region>;
   createConnection(input: CreateConnectionInput): MaybePromise<Connection>;
+  updateBrand(brandId: string, input: UpdateBrandInput): MaybePromise<Brand>;
+  updateRegion(regionId: string, input: UpdateRegionInput): MaybePromise<Region>;
+  updateConnection(connectionId: string, input: UpdateConnectionInput): MaybePromise<Connection>;
+  resetEntity(input: ResetEntityInput): MaybePromise<GatewayState>;
   testConnection(connectionId: string): MaybePromise<Connection>;
   rotateApiKey(clientId: string, keyId: string): MaybePromise<ApiKey>;
   revokeApiKey(clientId: string, keyId: string): MaybePromise<ApiKey>;
