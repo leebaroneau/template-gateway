@@ -6,6 +6,7 @@ function adminClientApp() {
     selectedBrandId: string | null;
     selectedRegionId: string | null;
     selectedConnectorId: string | null;
+    selectedConnectionId: string | null;
   };
 
   const root = document.getElementById("app-root") as HTMLElement | null;
@@ -15,7 +16,8 @@ function adminClientApp() {
     view: "overview",
     selectedBrandId: null,
     selectedRegionId: null,
-    selectedConnectorId: null
+    selectedConnectorId: null,
+    selectedConnectionId: null
   };
 
   if (!root || !errorPanel) {
@@ -56,6 +58,36 @@ function adminClientApp() {
   function statusBadge(status: unknown): string {
     const raw = String(status ?? "unknown");
     return `<span class="badge ${safeClass(raw)}">${h(raw.replace(/_/g, " "))}</span>`;
+  }
+
+  function entityMeta(entityType: string, entityId: unknown): Item | undefined {
+    const meta = Array.isArray(uiState.data?.entityMeta) ? uiState.data.entityMeta : [];
+    return meta.find((item: Item) => item.entityType === entityType && item.entityId === entityId);
+  }
+
+  function sourceBadge(entityType: string, entityId: unknown): string {
+    const meta = entityMeta(entityType, entityId);
+    if (!meta) {
+      return "";
+    }
+    const overrideFields = Array.isArray(meta.overrideFields) ? meta.overrideFields : [];
+    const overrideTitle = overrideFields.length ? ` title="Override fields: ${h(overrideFields.join(", "))}"` : "";
+    const sourceClass = safeClass(meta.source ?? "source");
+    return `<span class="source-row">
+      <span class="source-chip ${sourceClass}">${h(meta.sourceLabel ?? meta.source ?? "Source")}</span>
+      ${meta.hasOverride ? `<span class="source-chip override"${overrideTitle}>Override</span>` : ""}
+    </span>`;
+  }
+
+  function canReset(entityType: string, entityId: unknown): boolean {
+    return entityMeta(entityType, entityId)?.hasOverride === true;
+  }
+
+  function resetButton(entityType: string, entityId: unknown): string {
+    if (!canReset(entityType, entityId)) {
+      return "";
+    }
+    return `<button class="btn btn-danger btn-reset" type="button" data-action="reset-entity" data-entity-type="${h(entityType)}" data-entity-id="${h(entityId)}">Reset overlay</button>`;
   }
 
   function chips(values: unknown[]): string {
@@ -113,13 +145,25 @@ function adminClientApp() {
   function selectBrand(brandId: string | null): void {
     if (uiState.selectedBrandId !== brandId) {
       uiState.selectedRegionId = null;
+      uiState.selectedConnectionId = null;
     }
     uiState.selectedBrandId = brandId;
-    selectedRegionForBrand(brandRegions(brandId));
+    const selectedRegion = selectedRegionForBrand(brandRegions(brandId));
+    selectedConnectionForRegion(regionConnections(selectedRegion?.id));
   }
 
   function regionConnections(regionId: unknown): Item[] {
     return collection("connections").filter((connection) => connection.regionId === regionId);
+  }
+
+  function selectedConnectionForRegion(connections: Item[]): Item | undefined {
+    const selectedConnection = connections.find((connection) => connection.id === uiState.selectedConnectionId);
+    if (selectedConnection) {
+      return selectedConnection;
+    }
+    const fallbackConnection = connections[0];
+    uiState.selectedConnectionId = fallbackConnection?.id ?? null;
+    return fallbackConnection;
   }
 
   function ensureSelections(): void {
@@ -128,7 +172,8 @@ function adminClientApp() {
     if (!brands.some((brand) => brand.id === uiState.selectedBrandId)) {
       selectBrand(brands[0]?.id ?? null);
     } else {
-      selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
+      const selectedRegion = selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
+      selectedConnectionForRegion(regionConnections(selectedRegion?.id));
     }
     if (!connectors.some((connector) => connector.id === uiState.selectedConnectorId)) {
       uiState.selectedConnectorId = connectors[0]?.id ?? null;
@@ -171,6 +216,14 @@ function adminClientApp() {
     });
   }
 
+  async function patchJson(path: string, body: Item = {}): Promise<Item> {
+    return requestJson(path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+
   async function refreshState(): Promise<void> {
     clearError();
     const state = await requestJson("/admin/api/state");
@@ -194,19 +247,22 @@ function adminClientApp() {
 
   function connectionRows(connections: Item[]): string {
     if (!connections.length) {
-      return `<tr><td colspan="6" class="muted">No connections.</td></tr>`;
+      return `<tr><td colspan="7" class="muted">No connections.</td></tr>`;
     }
     return connections
       .map((connection) => {
         const connector = connectorFor(connection);
         const region = byId("regions", connection.regionId);
-        return `<tr>
+        const isSelected = connection.id === uiState.selectedConnectionId;
+        return `<tr class="${isSelected ? "is-selected" : ""}">
           <td><strong>${h(connection.displayName)}</strong><div class="small muted">${h(connection.id)}</div></td>
           <td>${h(connector?.name ?? connection.connectorId)}</td>
           <td>${h(region?.code ?? connection.regionId)}</td>
           <td>${h(connection.backendType)}</td>
           <td>${statusBadge(connection.status)}</td>
+          <td>${sourceBadge("connection", connection.id)}</td>
           <td class="button-row">
+            <button class="btn" type="button" data-action="select-connection" data-connection-id="${h(connection.id)}">${isSelected ? "Selected" : "Edit"}</button>
             <button class="btn" type="button" data-action="test-connection" data-connection-id="${h(connection.id)}">Test</button>
           </td>
         </tr>`;
@@ -257,7 +313,7 @@ function adminClientApp() {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Action</th></tr></thead>
+              <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Source</th><th>Action</th></tr></thead>
               <tbody>${connectionRows(connections.slice(0, 8))}</tbody>
             </table>
           </div>
@@ -282,6 +338,131 @@ function adminClientApp() {
       .join("");
   }
 
+  function valueOptions(values: string[], selectedValue: unknown): string {
+    return values.map((value) => `<option value="${h(value)}" ${value === selectedValue ? "selected" : ""}>${h(value.replace(/_/g, " "))}</option>`).join("");
+  }
+
+  function configSummaryText(configSummary: Item | undefined): string {
+    return Object.entries(configSummary ?? {})
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join("\n");
+  }
+
+  function configSummaryFromText(value: string): Item {
+    const summary: Item = {};
+    for (const [index, rawLine] of value.split(/\r?\n/).entries()) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+      const separatorIndex = line.indexOf("=");
+      if (separatorIndex <= 0) {
+        throw new Error(`Config summary line ${index + 1} must use key=value.`);
+      }
+      const key = line.slice(0, separatorIndex).trim();
+      const fieldValue = line.slice(separatorIndex + 1).trim();
+      if (!key) {
+        throw new Error(`Config summary line ${index + 1} is missing a key.`);
+      }
+      summary[key] = fieldValue;
+    }
+    return summary;
+  }
+
+  function renderBrandEditor(brand: Item | undefined): string {
+    if (!brand) {
+      return `<section class="panel"><div class="empty-panel">Select a brand to edit.</div></section>`;
+    }
+    return `<section class="panel">
+      <div class="panel-header">
+        <div><h3>Selected brand</h3><p>${h(brand.slug)} is source-owned identity.</p></div>
+        ${sourceBadge("brand", brand.id)}
+      </div>
+      <form data-action="update-brand" data-brand-id="${h(brand.id)}" class="form-grid inline-edit">
+        <label>
+          Name
+          <input name="name" required value="${h(brand.name)}">
+        </label>
+        <label>
+          Status
+          <select name="status">${valueOptions(["active", "disabled"], brand.status)}</select>
+        </label>
+        <label class="span-2">
+          Slug
+          <input name="slug_display" value="${h(brand.slug)}" readonly>
+        </label>
+        <div class="button-row span-2">
+          <button class="btn btn-primary" type="submit">Save brand</button>
+          ${resetButton("brand", brand.id)}
+        </div>
+      </form>
+    </section>`;
+  }
+
+  function renderRegionEditor(region: Item | undefined): string {
+    if (!region) {
+      return `<div class="empty-panel">Select a region to edit.</div>`;
+    }
+    return `<form data-action="update-region" data-region-id="${h(region.id)}" class="form-grid inline-edit">
+      <label>
+        Name
+        <input name="name" required value="${h(region.name)}">
+      </label>
+      <label>
+        Status
+        <select name="status">${valueOptions(["active", "disabled"], region.status)}</select>
+      </label>
+      <label>
+        Code
+        <input name="code_display" value="${h(region.code)}" readonly>
+      </label>
+      <label>
+        Domain
+        <input name="domain" value="${h(region.domain ?? "")}" placeholder="brand.example">
+      </label>
+      <div class="source-line span-2">${sourceBadge("region", region.id)}</div>
+      <div class="button-row span-2">
+        <button class="btn btn-primary" type="submit">Save region</button>
+        ${resetButton("region", region.id)}
+      </div>
+    </form>`;
+  }
+
+  function renderConnectionEditor(connection: Item | undefined): string {
+    if (!connection) {
+      return `<div class="empty-panel">Select a connection to edit.</div>`;
+    }
+    const connector = connectorFor(connection);
+    const backendOptions = ((connector?.backendOptions ?? [connection.backendType]) as string[]).filter(Boolean);
+    return `<form data-action="update-connection" data-connection-id="${h(connection.id)}" class="form-grid inline-edit">
+      <label>
+        Display name
+        <input name="displayName" required value="${h(connection.displayName)}">
+      </label>
+      <label>
+        Backend type
+        <select name="backendType">${valueOptions(backendOptions, connection.backendType)}</select>
+      </label>
+      <label>
+        Status
+        <select name="status">${valueOptions(["needs_config", "pending", "connected", "needs_reconnect", "error"], connection.status)}</select>
+      </label>
+      <label>
+        Connector
+        <input value="${h(connector?.name ?? connection.connectorId)}" readonly>
+      </label>
+      <label class="span-2">
+        Config summary fields to save for this connection
+        <textarea name="configSummary" spellcheck="false" placeholder="key=value">${h(configSummaryText(connection.configSummary))}</textarea>
+      </label>
+      <div class="source-line span-2">${sourceBadge("connection", connection.id)}</div>
+      <div class="button-row span-2">
+        <button class="btn btn-primary" type="submit">Save connection</button>
+        ${resetButton("connection", connection.id)}
+      </div>
+    </form>`;
+  }
+
   function renderBrandList(): string {
     return collection("brands")
       .map((brand) => {
@@ -290,6 +471,7 @@ function adminClientApp() {
           <div>
             <strong>${h(brand.name)}</strong>
             <div class="small muted">${h(brand.slug)} - ${regions.length} region${regions.length === 1 ? "" : "s"}</div>
+            ${sourceBadge("brand", brand.id)}
           </div>
           ${statusBadge(brand.status)}
         </div>`;
@@ -307,6 +489,7 @@ function adminClientApp() {
           <div>
             <strong>${h(region.name)}</strong>
             <div class="small muted">${h(region.code)}${region.domain ? ` - ${h(region.domain)}` : ""}</div>
+            ${sourceBadge("region", region.id)}
           </div>
           ${statusBadge(region.status)}
         </div>`
@@ -373,6 +556,7 @@ function adminClientApp() {
     const regions = brandRegions(uiState.selectedBrandId);
     const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
+    const selectedConnection = selectedConnectionForRegion(connections);
     return `${viewHeader("Brands", "Manage brand and region entities for the fixture gateway.")}
       <div class="grid-wide">
         <section class="panel">
@@ -380,6 +564,7 @@ function adminClientApp() {
           <div class="dense-list">${renderBrandList()}</div>
         </section>
         <div class="workspace">
+          ${renderBrandEditor(selectedBrand)}
           <section class="panel">
             <div class="form-grid">
               <form data-action="create-brand" class="form-grid span-2">
@@ -402,6 +587,7 @@ function adminClientApp() {
               <div><h3>Regions</h3><p>${selectedBrand ? h(selectedBrand.name) : "No brand selected"}</p></div>
               <select data-control="brand" aria-label="Selected brand">${optionsFor(collection("brands"), uiState.selectedBrandId)}</select>
             </div>
+            ${renderRegionEditor(selectedRegion)}
             <div class="dense-list">${renderRegionList(regions)}</div>
             <form data-action="create-region" class="form-grid">
               <label>
@@ -424,14 +610,18 @@ function adminClientApp() {
           <section class="panel">
             <div class="panel-header">
               <div><h3>Regional connections</h3><p>${selectedRegion ? h(selectedRegion.name) : "No region selected"}</p></div>
-              <select data-control="region" aria-label="Selected region">${optionsFor(regions, uiState.selectedRegionId, "code")}</select>
+              <div class="select-pair">
+                <select data-control="region" aria-label="Selected region">${optionsFor(regions, uiState.selectedRegionId, "code")}</select>
+                <select data-control="connection" aria-label="Selected connection">${optionsFor(connections, uiState.selectedConnectionId, "displayName")}</select>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Action</th></tr></thead>
+                <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Source</th><th>Action</th></tr></thead>
                 <tbody>${connectionRows(connections)}</tbody>
               </table>
             </div>
+            <div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>
           </section>
           ${renderConnectorSetup()}
         </div>
@@ -527,6 +717,11 @@ function adminClientApp() {
     return typeof value === "string" && value.trim() ? value : undefined;
   }
 
+  function formText(form: HTMLFormElement, name: string): string {
+    const value = new FormData(form).get(name);
+    return typeof value === "string" ? value : "";
+  }
+
   function configSummaryFromForm(form: HTMLFormElement): Item {
     const summary: Item = {};
     for (const [key, value] of new FormData(form).entries()) {
@@ -571,6 +766,36 @@ function adminClientApp() {
       render();
       return;
     }
+    if (action === "update-brand") {
+      const brandId = form.dataset.brandId;
+      if (!brandId) {
+        throw new Error("Select a brand before saving.");
+      }
+      const result = await patchJson(`/admin/api/brands/${encodeURIComponent(brandId)}`, {
+        name: field(form, "name"),
+        status: field(form, "status")
+      });
+      applyState(result.state);
+      selectBrand(result.brand?.id ?? brandId);
+      render();
+      return;
+    }
+    if (action === "update-region") {
+      const regionId = form.dataset.regionId;
+      if (!regionId) {
+        throw new Error("Select a region before saving.");
+      }
+      const result = await patchJson(`/admin/api/regions/${encodeURIComponent(regionId)}`, {
+        name: field(form, "name"),
+        domain: formText(form, "domain"),
+        status: field(form, "status")
+      });
+      applyState(result.state);
+      uiState.selectedRegionId = result.region?.id ?? regionId;
+      selectedConnectionForRegion(regionConnections(uiState.selectedRegionId));
+      render();
+      return;
+    }
     if (action === "create-connection") {
       const selectedRegion = selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
       if (!uiState.selectedBrandId || !selectedRegion) {
@@ -584,6 +809,23 @@ function adminClientApp() {
         configSummary: configSummaryFromForm(form)
       });
       applyState(result.state);
+      uiState.selectedConnectionId = result.connection?.id ?? uiState.selectedConnectionId;
+      render();
+      return;
+    }
+    if (action === "update-connection") {
+      const connectionId = form.dataset.connectionId;
+      if (!connectionId) {
+        throw new Error("Select a connection before saving.");
+      }
+      const result = await patchJson(`/admin/api/connections/${encodeURIComponent(connectionId)}`, {
+        displayName: field(form, "displayName"),
+        backendType: field(form, "backendType"),
+        status: field(form, "status"),
+        configSummary: configSummaryFromText(formText(form, "configSummary"))
+      });
+      applyState(result.state);
+      uiState.selectedConnectionId = result.connection?.id ?? connectionId;
       render();
     }
   }
@@ -591,8 +833,23 @@ function adminClientApp() {
   async function handleButton(button: HTMLElement): Promise<void> {
     clearError();
     const action = button.dataset.action;
+    if (action === "select-connection" && button.dataset.connectionId) {
+      uiState.selectedConnectionId = button.dataset.connectionId;
+      render();
+      return;
+    }
     if (action === "test-connection" && button.dataset.connectionId) {
       const result = await postJson(`/admin/api/connections/${encodeURIComponent(button.dataset.connectionId)}/test`);
+      applyState(result.state);
+      uiState.selectedConnectionId = result.connection?.id ?? button.dataset.connectionId;
+      render();
+      return;
+    }
+    if (action === "reset-entity" && button.dataset.entityType && button.dataset.entityId) {
+      const result = await postJson("/admin/api/entities/reset", {
+        entityType: button.dataset.entityType,
+        entityId: button.dataset.entityId
+      });
       applyState(result.state);
       render();
       return;
@@ -640,11 +897,16 @@ function adminClientApp() {
     }
     if (control === "region") {
       uiState.selectedRegionId = target.value;
-      selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
+      uiState.selectedConnectionId = null;
+      selectedConnectionForRegion(regionConnections(uiState.selectedRegionId));
       render();
     }
     if (control === "connector") {
       uiState.selectedConnectorId = target.value;
+      render();
+    }
+    if (control === "connection") {
+      uiState.selectedConnectionId = target.value;
       render();
     }
   });

@@ -126,18 +126,34 @@ describe("admin routes", () => {
     expect(css.headers["content-type"]).toContain("text/css");
     expect(css.headers["cache-control"]).toBe("no-store");
     expect(css.text).toContain(".admin-shell");
+    expect(css.text).toContain(".source-chip");
+    expect(css.text).toContain(".inline-edit");
+    expect(css.text).toContain(".btn-reset");
     expect(js.status).toBe(200);
     expect(js.headers["content-type"]).toContain("javascript");
     expect(js.headers["cache-control"]).toBe("no-store");
     expect(js.text).toContain("/admin/api/state");
+    expect(js.text).toContain("function patchJson");
+    expect(js.text).toContain("function sourceBadge");
+    expect(js.text).toContain("function configSummaryFromText");
+    expect(js.text).toContain("/admin/api/entities/reset");
+    expect(js.text).toContain("/admin/api/brands/");
+    expect(js.text).toContain("/admin/api/regions/");
+    expect(js.text).toContain("/admin/api/connections/");
     expect(js.text).toContain('class="panel setup-flow" id="setup-flow"');
     expect(js.text).toContain('class="setup-summary span-2"');
     expect(js.text).toContain("<strong>Scopes</strong>");
     expect(js.text).toContain("<strong>Supported backends</strong>");
     expect(js.text).toContain('form data-action="create-connection"');
+    expect(js.text).toContain('form data-action="update-brand"');
+    expect(js.text).toContain('form data-action="update-region"');
+    expect(js.text).toContain('form data-action="update-connection"');
     expect(js.text).toContain('select name="connectorId" data-control="connector"');
     expect(js.text).toContain('select data-control="region" aria-label="Selected region"');
+    expect(js.text).toContain('select data-control="connection" aria-label="Selected connection"');
     expect(js.text).toContain('data-action="test-connection"');
+    expect(js.text).toContain('data-action="select-connection"');
+    expect(js.text).toContain('data-action="reset-entity"');
     expect(js.text).toContain('data-action="rotate-key"');
     expect(js.text).toContain('data-action="revoke-key"');
     expect(() => new Function(js.text)).not.toThrow();
@@ -181,6 +197,93 @@ describe("admin routes", () => {
     expect(root.innerHTML).toContain("Overview");
     expect(root.innerHTML).toContain("Brands");
     expect(root.innerHTML).toContain("Active keys");
+  });
+
+  it("renders provenance, override, and reconfiguration controls in browser JavaScript", async () => {
+    const { app, backend } = buildAdminApp();
+    const js = await request(app).get("/admin/app.js");
+    const fixtureState = backend.snapshot();
+    const state = {
+      ...fixtureState,
+      entityMeta: [
+        {
+          entityType: "brand",
+          entityId: "brand_haverford",
+          source: "dev_api",
+          sourceLabel: "Haverford Dev API",
+          hasOverride: true,
+          overrideFields: ["name", "status"],
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          updatedBy: "task-7-test"
+        },
+        {
+          entityType: "region",
+          entityId: "region_haverford_au",
+          source: "gateway",
+          sourceLabel: "Gateway overlay",
+          hasOverride: true,
+          overrideFields: ["domain"],
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          updatedBy: "task-7-test"
+        },
+        {
+          entityType: "connection",
+          entityId: "connection_haverford_au_outlook",
+          source: "fixture",
+          sourceLabel: "Fixture backend",
+          hasOverride: true,
+          overrideFields: ["displayName", "configSummary"],
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          updatedBy: "task-7-test"
+        }
+      ]
+    };
+    const root = { innerHTML: "" };
+    const errorPanel = { textContent: "", hidden: true };
+    const listeners = new Map<string, (event: unknown) => void>();
+    const documentMock = {
+      getElementById(id: string) {
+        if (id === "app-root") {
+          return root;
+        }
+        if (id === "app-error") {
+          return errorPanel;
+        }
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        listeners.set(type, listener);
+      }
+    };
+    const fetchMock = async (path: string) => ({
+      ok: true,
+      text: async () => {
+        expect(path).toBe("/admin/api/state");
+        return JSON.stringify(state);
+      }
+    });
+
+    const executeScript = new Function("document", "fetch", js.text);
+    expect(() => executeScript(documentMock, fetchMock)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    listeners.get("click")?.({
+      target: {
+        closest: (selector: string) => (selector === "button[data-view]" ? { dataset: { view: "brands" } } : null)
+      }
+    });
+
+    expect(errorPanel.hidden).toBe(true);
+    expect(root.innerHTML).toContain("Haverford Dev API");
+    expect(root.innerHTML).toContain("Gateway overlay");
+    expect(root.innerHTML).toContain("Fixture backend");
+    expect(root.innerHTML).toContain("Override");
+    expect(root.innerHTML).toContain('form data-action="update-brand"');
+    expect(root.innerHTML).toContain('form data-action="update-region"');
+    expect(root.innerHTML).toContain('form data-action="update-connection"');
+    expect(root.innerHTML).toContain('data-action="reset-entity"');
   });
 
   it("wraps browser JavaScript so tsx helper-injected function strings can execute", () => {

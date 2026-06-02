@@ -34,7 +34,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -255,6 +256,10 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+tr.is-selected td {
+  background: #f2f8fa;
+}
+
 .dense-list {
   display: grid;
   gap: 8px;
@@ -342,6 +347,40 @@ tr:last-child td {
   font-size: 12px;
 }
 
+.source-row,
+.source-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.source-line {
+  min-height: 24px;
+}
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #eef5f7;
+  color: #38515b;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.source-chip.override {
+  border-color: #e0b76d;
+  background: #fff5df;
+  color: var(--warning);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -361,7 +400,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 34px;
   padding: 7px 9px;
@@ -372,9 +412,37 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: 2px solid rgba(29, 111, 143, 0.24);
   border-color: var(--accent);
+}
+
+input[readonly] {
+  background: #f6f8fa;
+  color: var(--muted);
+}
+
+textarea {
+  min-height: 92px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  line-height: 1.4;
+}
+
+.inline-edit {
+  padding-top: 2px;
+}
+
+.edit-block {
+  margin-top: 12px;
+}
+
+.select-pair {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) minmax(160px, 240px);
+  gap: 8px;
+  align-items: center;
 }
 
 .button-row {
@@ -407,6 +475,10 @@ select:focus {
 .btn-danger {
   border-color: #d79b96;
   color: var(--danger);
+}
+
+.btn-reset {
+  background: #fff8f7;
 }
 
 .setup-flow {
@@ -467,7 +539,8 @@ select:focus {
   .metrics-grid,
   .grid-two,
   .grid-wide,
-  .form-grid {
+  .form-grid,
+  .select-pair {
     grid-template-columns: 1fr;
   }
 
