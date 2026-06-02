@@ -1,5 +1,7 @@
 import "dotenv/config";
 
+export type AdminDataSource = "fixture" | "dev-api";
+
 export interface GatewayConfig {
   composioApiKey: string;
   composioProjectId?: string;
@@ -9,18 +11,22 @@ export interface GatewayConfig {
   authConfigs?: Record<string, string>;
   port: number;
   sessionTtlSeconds: number;
+  adminDataSource: AdminDataSource;
+  haverfordDevApiBaseUrl?: string;
+  haverfordDevApiClientId?: string;
+  haverfordDevApiClientSecret?: string;
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
+function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name];
   if (!value || value.trim() === "") {
     throw new Error(`Missing required env var: ${name}`);
   }
   return value.trim();
 }
 
-function optionalEnv(name: string): string | undefined {
-  const value = process.env[name];
+function optionalEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name];
   if (!value || value.trim() === "") return undefined;
   return value.trim();
 }
@@ -68,15 +74,28 @@ function parseSessionTtl(raw?: string): number {
   return Math.floor(n);
 }
 
+function parseAdminDataSource(raw?: string): AdminDataSource {
+  if (!raw) return "fixture";
+  const value = raw.trim().toLowerCase();
+  if (value === "fixture" || value === "dev-api") {
+    return value;
+  }
+  throw new Error(`ADMIN_DATA_SOURCE must be fixture or dev-api (got ${raw})`);
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   return {
-    composioApiKey: requireEnv("COMPOSIO_API_KEY"),
-    composioProjectId: optionalEnv("COMPOSIO_PROJECT_ID"),
-    brandSlug: requireEnv("BRAND_SLUG"),
-    gatewayBearer: requireEnv("GATEWAY_BEARER"),
+    composioApiKey: requireEnv(env, "COMPOSIO_API_KEY"),
+    composioProjectId: optionalEnv(env, "COMPOSIO_PROJECT_ID"),
+    brandSlug: requireEnv(env, "BRAND_SLUG"),
+    gatewayBearer: requireEnv(env, "GATEWAY_BEARER"),
     toolkitAllowlist: parseToolkitAllowlist(env.TOOLKIT_ALLOWLIST),
     authConfigs: parseAuthConfigs(env.AUTH_CONFIGS),
     port: parsePort(env.PORT),
-    sessionTtlSeconds: parseSessionTtl(env.SESSION_TTL_SECONDS)
+    sessionTtlSeconds: parseSessionTtl(env.SESSION_TTL_SECONDS),
+    adminDataSource: parseAdminDataSource(env.ADMIN_DATA_SOURCE),
+    haverfordDevApiBaseUrl: optionalEnv(env, "HAVERFORD_DEV_API_BASE_URL"),
+    haverfordDevApiClientId: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_ID"),
+    haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET")
   };
 }

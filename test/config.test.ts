@@ -13,6 +13,10 @@ describe("loadConfig", () => {
     delete process.env.AUTH_CONFIGS;
     delete process.env.PORT;
     delete process.env.SESSION_TTL_SECONDS;
+    delete process.env.ADMIN_DATA_SOURCE;
+    delete process.env.HAVERFORD_DEV_API_BASE_URL;
+    delete process.env.HAVERFORD_DEV_API_CLIENT_ID;
+    delete process.env.HAVERFORD_DEV_API_CLIENT_SECRET;
   });
 
   afterEach(() => {
@@ -38,6 +42,50 @@ describe("loadConfig", () => {
     expect(cfg.port).toBe(3000);
     expect(cfg.sessionTtlSeconds).toBe(3600);
     expect(cfg.toolkitAllowlist).toBeUndefined();
+    expect(cfg.adminDataSource).toBe("fixture");
+  });
+
+  it("parses Dev API admin data source settings", () => {
+    process.env.COMPOSIO_API_KEY = "ak_test";
+    process.env.BRAND_SLUG = "genvest";
+    process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
+    process.env.ADMIN_DATA_SOURCE = "dev-api";
+    process.env.HAVERFORD_DEV_API_BASE_URL = " https://dev-api.haverford.au ";
+    process.env.HAVERFORD_DEV_API_CLIENT_ID = " gateway-admin ";
+    process.env.HAVERFORD_DEV_API_CLIENT_SECRET = " secret ";
+
+    const cfg = loadConfig();
+
+    expect(cfg.adminDataSource).toBe("dev-api");
+    expect(cfg.haverfordDevApiBaseUrl).toBe("https://dev-api.haverford.au");
+    expect(cfg.haverfordDevApiClientId).toBe("gateway-admin");
+    expect(cfg.haverfordDevApiClientSecret).toBe("secret");
+  });
+
+  it("parses Dev API admin data source settings from a custom env object", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "genvest",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "dev-api",
+      HAVERFORD_DEV_API_BASE_URL: " https://dev-api.haverford.au ",
+      HAVERFORD_DEV_API_CLIENT_ID: " gateway-admin ",
+      HAVERFORD_DEV_API_CLIENT_SECRET: " secret "
+    });
+
+    expect(cfg.adminDataSource).toBe("dev-api");
+    expect(cfg.haverfordDevApiBaseUrl).toBe("https://dev-api.haverford.au");
+    expect(cfg.haverfordDevApiClientId).toBe("gateway-admin");
+    expect(cfg.haverfordDevApiClientSecret).toBe("secret");
+  });
+
+  it("rejects invalid admin data sources", () => {
+    process.env.COMPOSIO_API_KEY = "ak_test";
+    process.env.BRAND_SLUG = "genvest";
+    process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
+    process.env.ADMIN_DATA_SOURCE = "sqlite";
+
+    expect(() => loadConfig()).toThrow(/ADMIN_DATA_SOURCE/);
   });
 
   it("parses the toolkit allowlist as a normalised array", () => {

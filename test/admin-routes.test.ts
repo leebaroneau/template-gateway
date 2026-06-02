@@ -43,7 +43,8 @@ function testConfig(): GatewayConfig {
     brandSlug: "haverford",
     gatewayBearer: "a_secret_thats_long_enough",
     port: 3000,
-    sessionTtlSeconds: 3600
+    sessionTtlSeconds: 3600,
+    adminDataSource: "fixture"
   };
 }
 
