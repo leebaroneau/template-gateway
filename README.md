@@ -46,24 +46,41 @@ curl http://localhost:3000/health
 
 ## Local admin UI prototype
 
-The Haverford Unified Gateway admin prototype is available at:
+The Haverford Unified Gateway admin prototype supports two local backend modes.
+Fixture mode is the default and runs fully locally without a live Dev API,
+Composio session, OAuth provider, native connector, or persistent-volume store:
 
 ```bash
+COMPOSIO_API_KEY=ak_local_dummy \
+BRAND_SLUG=haverford \
+GATEWAY_BEARER=a_secret_thats_long_enough \
+ADMIN_DATA_SOURCE=fixture \
+PORT=3000 \
 npm run dev
-open http://localhost:3000/admin
 ```
 
-This milestone is fixture-data only. It proves the operator workflow before backend integration:
+Open `http://localhost:3000/admin`.
 
-- add brands
-- add regions under brands
-- add connections under brand/region
-- review connector backend options (`nango`, `composio`, `native`, `internal`)
-- view API clients
-- rotate and revoke mock keys
-- view mock usage and audit history
+Fixture mode proves the operator workflow: brands, regions, connections,
+backend options, API clients, mock key rotation/revocation, and audit.
 
-The prototype does not call Nango, Composio, OAuth providers, native connectors, or persistent-volume storage.
+Dev API read-through mode reads configured admin data from Haverford Dev API:
+
+```bash
+COMPOSIO_API_KEY=ak_local_dummy \
+BRAND_SLUG=haverford \
+GATEWAY_BEARER=a_secret_thats_long_enough \
+ADMIN_DATA_SOURCE=dev-api \
+HAVERFORD_DEV_API_BASE_URL=http://localhost:3001 \
+HAVERFORD_DEV_API_CLIENT_ID=<internal-client-id> \
+HAVERFORD_DEV_API_CLIENT_SECRET=<internal-client-secret> \
+PORT=3000 \
+npm run dev
+```
+
+Dev API mode is read-only in this phase. It displays brands, regions, and
+configured service connections from `/api/internal/brands`; create, test,
+rotate, and revoke remain fixture-mode only until the persistent gateway store.
 
 For deployment/backend phases, the source of truth must be persistent app data on the mounted volume, not deployment environment variables. Coolify env vars should stay limited to bootstrap/runtime inputs such as app secrets, Auth-Gate URL, initial admin/bootstrap token, and global provider credentials where required.
 
@@ -82,10 +99,14 @@ mybrand:
 
 | Var | Required | Meaning |
 |---|---|---|
-| `COMPOSIO_API_KEY` | yes | Org-level Composio API key |
-| `BRAND_SLUG` | yes | e.g. `genvest`; default `user_id` when header missing |
+| `COMPOSIO_API_KEY` | yes | Org-level Composio API key for `/mcp`; admin fixture mode can use `ak_local_dummy` |
+| `BRAND_SLUG` | yes | Brand slug, e.g. `haverford` or `genvest`; default `user_id` when header missing |
 | `GATEWAY_BEARER` | yes | Shared secret for Hermes ↔ gateway auth (≥16 chars) |
 | `COMPOSIO_PROJECT_ID` | no | Constrain to a specific Composio project |
+| `ADMIN_DATA_SOURCE` | no | Admin backend mode; defaults to `fixture` |
+| `HAVERFORD_DEV_API_BASE_URL` | only when `ADMIN_DATA_SOURCE=dev-api` | Base URL for Haverford Dev API read-through mode |
+| `HAVERFORD_DEV_API_CLIENT_ID` | only when `ADMIN_DATA_SOURCE=dev-api` | Internal client id sent to Haverford Dev API |
+| `HAVERFORD_DEV_API_CLIENT_SECRET` | only when `ADMIN_DATA_SOURCE=dev-api` | Internal client secret sent to Haverford Dev API |
 | `TOOLKIT_ALLOWLIST` | no | Comma-separated, e.g. `outlook,one_drive,pipedrive` — defaults to all toolkits the API key sees |
 | `PORT` | no | Default `3000` |
 | `SESSION_TTL_SECONDS` | no | Tool Router session cache TTL; default `3600`, min `60` |
