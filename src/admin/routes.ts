@@ -5,7 +5,7 @@ import { adminClientScript } from "./client-script.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
 import { renderAdminPage } from "./page.js";
 import { adminStyles } from "./styles.js";
-import type { GatewayConnectionBackend } from "./types.js";
+import type { GatewayConnectionBackend, GatewayEntityType } from "./types.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -38,6 +38,13 @@ function sendError(res: Response, error: unknown): void {
 
 function noStore(res: Response): void {
   res.set("Cache-Control", "no-store");
+}
+
+function entityTypeFromParam(value: string): GatewayEntityType {
+  if (value === "brand" || value === "region" || value === "connection") {
+    return value;
+  }
+  throw new Error(`Invalid entity type: ${value}`);
 }
 
 export function createAdminRouter(backend: GatewayConnectionBackend = new FixtureGatewayBackend()): express.Router {
@@ -160,6 +167,18 @@ export function createAdminRouter(backend: GatewayConnectionBackend = new Fixtur
     try {
       const connection = await backend.testConnection(req.params.connectionId);
       res.json({ connection, state: await backend.snapshot() });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/api/entities/:entityType/:entityId/reset", async (req: Request, res: Response) => {
+    try {
+      const state = await backend.resetEntity({
+        entityType: entityTypeFromParam(req.params.entityType),
+        entityId: req.params.entityId
+      });
+      res.json({ state });
     } catch (error) {
       sendError(res, error);
     }

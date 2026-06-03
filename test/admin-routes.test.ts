@@ -540,6 +540,28 @@ describe("admin routes", () => {
     });
   });
 
+  it("supports the spec reset route with entity type and id path params", async () => {
+    const baseBackend = asyncBackendFromFixture();
+    const backend = {
+      ...baseBackend,
+      resetEntity: vi.fn(async (input) => ({
+        ...(await baseBackend.snapshot()),
+        brands: [{ id: "brand_reset", slug: "reset", name: "Reset State", status: "active" }]
+      }))
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend);
+
+    const res = await request(app).post("/admin/api/entities/brand/brand_haverford/reset").send({});
+
+    expect(res.status).toBe(200);
+    expect(backend.resetEntity).toHaveBeenCalledWith({ entityType: "brand", entityId: "brand_haverford" });
+    expect(res.body).toMatchObject({
+      state: {
+        brands: [{ id: "brand_reset", slug: "reset", name: "Reset State", status: "active" }]
+      }
+    });
+  });
+
   it("returns 400 JSON when patching entities with array bodies", async () => {
     const backend = {
       ...asyncBackendFromFixture(),
