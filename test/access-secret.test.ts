@@ -13,6 +13,7 @@ describe("API key secret utilities", () => {
     const secret = createApiKeySecret();
 
     expect(secret).toMatch(/^gw_live_[A-Za-z0-9_-]{32,}$/);
+    expect(secret).toHaveLength(51);
   });
 
   it("previews secrets with only the prefix and final four characters", () => {
@@ -31,8 +32,12 @@ describe("API key secret utilities", () => {
   it("hashes and verifies secrets without storing the raw value", () => {
     const secret = createApiKeySecret();
     const hash = hashApiKeySecret(secret);
+    const [algorithm, n, r, p, salt, derived] = hash.split("$");
 
     expect(hash).toMatch(/^scrypt\$/);
+    expect([algorithm, n, r, p]).toEqual(["scrypt", "16384", "8", "1"]);
+    expect(salt).toBeTruthy();
+    expect(derived).toBeTruthy();
     expect(hash).not.toContain(secret);
     expect(verifyApiKeySecret(secret, hash)).toBe(true);
     expect(verifyApiKeySecret(`${secret}x`, hash)).toBe(false);
