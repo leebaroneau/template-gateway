@@ -15,8 +15,17 @@ export type AuditAction =
   | "connection.updated"
   | "connection.tested"
   | "entity.reset"
+  | "api_client.created"
+  | "api_client.updated"
+  | "api_client.revoked"
+  | "api_key.created"
   | "api_key.rotated"
-  | "api_key.revoked";
+  | "api_key.revoked"
+  | "api_auth.succeeded"
+  | "api_auth.failed"
+  | "api_scope.denied"
+  | "api_read.succeeded"
+  | "api_read.failed";
 
 export interface Brand {
   id: string;
