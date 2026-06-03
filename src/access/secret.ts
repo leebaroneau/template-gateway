@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 
 const SECRET_PREFIX = "gw_live_";
 const SCRYPT_KEY_LENGTH = 32;
+const SCRYPT_SALT_LENGTH = 16;
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export function createApiKeySecret(): string {
   return `${SECRET_PREFIX}${crypto.randomBytes(32).toString("base64url")}`;
@@ -22,27 +24,44 @@ export function hashApiKeySecret(secret: string): string {
   return `scrypt$${SCRYPT_PARAMS.N}$${SCRYPT_PARAMS.r}$${SCRYPT_PARAMS.p}$${salt}$${derived}`;
 }
 
+function decodeCanonicalBase64Url(value: string): Buffer | undefined {
+  if (!BASE64URL_PATTERN.test(value)) {
+    return undefined;
+  }
+
+  const decoded = Buffer.from(value, "base64url");
+  if (decoded.length === 0 || decoded.toString("base64url") !== value) {
+    return undefined;
+  }
+
+  return decoded;
+}
+
 export function verifyApiKeySecret(secret: string, storedHash: string): boolean {
   const parts = storedHash.split("$");
-  if (parts.length !== 6 || parts[0] !== "scrypt") {
+  if (parts.length !== 6) {
     return false;
   }
 
-  const [, nValue, rValue, pValue, salt, expectedValue] = parts;
-  const N = Number(nValue);
-  const r = Number(rValue);
-  const p = Number(pValue);
-  if (!Number.isInteger(N) || !Number.isInteger(r) || !Number.isInteger(p)) {
+  const [algorithm, nValue, rValue, pValue, salt, expectedValue] = parts;
+  if (
+    algorithm !== "scrypt" ||
+    nValue !== String(SCRYPT_PARAMS.N) ||
+    rValue !== String(SCRYPT_PARAMS.r) ||
+    pValue !== String(SCRYPT_PARAMS.p)
+  ) {
     return false;
   }
 
   try {
-    const expected = Buffer.from(expectedValue, "base64url");
-    if (expected.length === 0) {
+    const decodedSalt = decodeCanonicalBase64Url(salt);
+    const expected = decodeCanonicalBase64Url(expectedValue);
+    if (decodedSalt?.length !== SCRYPT_SALT_LENGTH || expected?.length !== SCRYPT_KEY_LENGTH) {
       return false;
     }
-    const actual = crypto.scryptSync(secret, salt, expected.length, { N, r, p });
-    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+
+    const actual = crypto.scryptSync(secret, salt, SCRYPT_KEY_LENGTH, SCRYPT_PARAMS);
+    return crypto.timingSafeEqual(expected, actual);
   } catch {
     return false;
   }

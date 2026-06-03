@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createApiKeySecret,
@@ -7,6 +8,8 @@ import {
   verifyApiKeySecret
 } from "../src/access/secret.js";
 import { isGatewayApiScope, scopeAllowed, validateGatewayApiScopes } from "../src/access/types.js";
+
+const scryptParams = { N: 16384, r: 8, p: 1 };
 
 describe("API key secret utilities", () => {
   it("generates gateway-prefixed one-time secrets", () => {
@@ -43,6 +46,29 @@ describe("API key secret utilities", () => {
     expect(hash).not.toContain(secret);
     expect(verifyApiKeySecret(secret, hash)).toBe(true);
     expect(verifyApiKeySecret(`${secret}x`, hash)).toBe(false);
+  });
+
+  it("rejects stored hashes with truncated derived values", () => {
+    const secret = createApiKeySecret();
+    const [, n, r, p, salt] = hashApiKeySecret(secret).split("$");
+    const shortDerived = crypto.scryptSync(secret, salt, 1, scryptParams).toString("base64url");
+    const truncatedHash = `scrypt$${n}$${r}$${p}$${salt}$${shortDerived}`;
+
+    expect(verifyApiKeySecret(secret, truncatedHash)).toBe(false);
+  });
+
+  it("rejects malformed stored hash params and layout", () => {
+    const secret = createApiKeySecret();
+    const [, , , , salt] = hashApiKeySecret(secret).split("$");
+    const weakParams = { N: 1024, r: 8, p: 1 };
+    const weakDerived = crypto.scryptSync(secret, salt, 32, weakParams).toString("base64url");
+    const shortSalt = "abcd";
+    const shortSaltDerived = crypto.scryptSync(secret, shortSalt, 32, scryptParams).toString("base64url");
+
+    expect(verifyApiKeySecret(secret, `scrypt$1024$8$1$${salt}$${weakDerived}`)).toBe(false);
+    expect(verifyApiKeySecret(secret, `scrypt$16384$8$1$${shortSalt}$${shortSaltDerived}`)).toBe(false);
+    expect(verifyApiKeySecret(secret, `scrypt$16384$8$1$${salt}`)).toBe(false);
+    expect(verifyApiKeySecret(secret, `sha256$16384$8$1$${salt}$${weakDerived}`)).toBe(false);
   });
 });
 
