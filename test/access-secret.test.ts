@@ -32,9 +32,11 @@ describe("API key secret utilities", () => {
   it("hashes and verifies secrets without storing the raw value", () => {
     const secret = createApiKeySecret();
     const hash = hashApiKeySecret(secret);
-    const [algorithm, n, r, p, salt, derived] = hash.split("$");
+    const parts = hash.split("$");
+    const [algorithm, n, r, p, salt, derived] = parts;
 
     expect(hash).toMatch(/^scrypt\$/);
+    expect(parts).toHaveLength(6);
     expect([algorithm, n, r, p]).toEqual(["scrypt", "16384", "8", "1"]);
     expect(salt).toBeTruthy();
     expect(derived).toBeTruthy();
