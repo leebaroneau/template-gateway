@@ -62,13 +62,20 @@ export function createShopifyOAuthRouter(
         return;
       }
 
+      const webhookId = req.get("X-Shopify-Webhook-Id") ?? "";
       try {
         if (topic === "app/uninstalled") {
           adapter.handleUninstall(shop);
         } else if (topic === "shop/redact") {
           adapter.handleShopRedact(shop);
+        } else if (topic === "customers/data_request" || topic === "customers/redact") {
+          // Gateway stores no customer PII; audit receipt of compliance webhook.
+          // eslint-disable-next-line no-console
+          console.warn(`[shopify-oauth] compliance webhook received topic=${topic} shop=${shop} webhookId=${webhookId}`);
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn(`[shopify-oauth] unhandled webhook topic=${topic} shop=${shop} webhookId=${webhookId}`);
         }
-        // customers/data_request, customers/redact, unknown: just ack
         res.status(200).json({ ok: true });
       } catch {
         res.status(200).json({ ok: true }); // always ack on valid HMAC
