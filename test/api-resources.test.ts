@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mapDevApiBrandsToGatewayState } from "../src/admin/dev-api-mapper.js";
 import { toConnectionApiResource, toGatewayApiResources } from "../src/api/resources.js";
+import type { DevApiBrandsResponse } from "../src/admin/dev-api-types.js";
 import type { GatewayState } from "../src/admin/types.js";
 
 const baseState: GatewayState = {
@@ -136,6 +138,104 @@ describe("gateway API resources", () => {
     });
     expect(JSON.stringify(resource)).not.toContain("ya29.secret");
     expect(JSON.stringify(resource)).not.toContain("sk_hidden");
+  });
+
+  it("omits unsafe config summary keys even when their values look ordinary", () => {
+    const state: GatewayState = {
+      ...baseState,
+      connections: [
+        {
+          id: "connection_leaky_keys",
+          brandId: "brand_haverford",
+          regionId: "region_au",
+          connectorId: "connector_shopify",
+          backendType: "native",
+          displayName: "Leaky Key Shopify",
+          status: "connected",
+          configSummary: {
+            api_key: "ordinary setting",
+            access_token: "ordinary setting",
+            "access-token": "ordinary setting",
+            authorization: "ordinary setting",
+            bearer: "ordinary setting",
+            token: "ordinary setting",
+            secret: "ordinary setting",
+            password: "ordinary setting",
+            private_key: "ordinary setting",
+            privateKey: "ordinary setting",
+            service_account_token: "ordinary setting",
+            serviceAccountToken: "ordinary setting",
+            shop_domain: "haverford.myshopify.com",
+            account_id: "HAV-AU",
+            credential_configured: "true"
+          }
+        }
+      ]
+    };
+
+    const resource = toConnectionApiResource(state, state.connections[0]);
+
+    expect(resource.configSummary).toEqual({
+      shop_domain: "haverford.myshopify.com",
+      account_id: "HAV-AU",
+      credential_configured: "true"
+    });
+    expect(Object.keys(resource.configSummary)).not.toEqual(
+      expect.arrayContaining([
+        "api_key",
+        "access_token",
+        "access-token",
+        "authorization",
+        "bearer",
+        "token",
+        "secret",
+        "password",
+        "private_key",
+        "privateKey",
+        "service_account_token",
+        "serviceAccountToken"
+      ])
+    );
+  });
+
+  it("infers Dev API source for mapped snapshots that do not include entity metadata", () => {
+    const response: DevApiBrandsResponse = {
+      brands: [
+        {
+          slug: "haverford",
+          name: "Haverford",
+          regions: [
+            {
+              region: "au",
+              domain: "haverford.au",
+              brand_alias: null,
+              public: true,
+              services: {
+                shopify: {
+                  configured: true,
+                  shop_domain: "haverford.myshopify.com",
+                  display_name: "Haverford AU Shopify"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    };
+    const state = mapDevApiBrandsToGatewayState(response);
+
+    expect(state.entityMeta).toBeUndefined();
+    expect(toGatewayApiResources(state).connections).toEqual([
+      expect.objectContaining({
+        id: "devapi_haverford_au_shopify",
+        source: "dev_api",
+        setupMode: "current",
+        configSummary: {
+          shop_domain: "haverford.myshopify.com",
+          display_name: "Haverford AU Shopify"
+        }
+      })
+    ]);
   });
 
   it("returns stable resource collections", () => {

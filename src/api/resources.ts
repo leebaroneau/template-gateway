@@ -38,6 +38,17 @@ export interface GatewayApiResources {
 const credentialRefKeys = ["credential_ref", "credentialRef", "credential_group"] as const;
 const unsafeCredentialRefPattern =
   /bearer|token|secret|password|private_key|BEGIN|ya29|shpat_|xox|sk_|\{|\}/i;
+const unsafeConfigKeySegments = new Set([
+  "api_key",
+  "access_token",
+  "authorization",
+  "bearer",
+  "token",
+  "secret",
+  "password",
+  "private_key",
+  "service_account_token"
+]);
 
 export function toGatewayApiResources(state: GatewayState): GatewayApiResources {
   return {
@@ -74,9 +85,26 @@ export function toConnectionApiResource(state: GatewayState, connection: Connect
 }
 
 function connectionSource(state: GatewayState, connectionId: string): GatewayEntitySource {
-  return (
-    state.entityMeta?.find((meta) => meta.entityType === "connection" && meta.entityId === connectionId)?.source ??
-    "fixture"
+  const metaSource = state.entityMeta?.find(
+    (meta) => meta.entityType === "connection" && meta.entityId === connectionId
+  )?.source;
+
+  if (metaSource) {
+    return metaSource;
+  }
+
+  if (hasDevApiReadThroughSignal(state) && connectionId.startsWith("devapi_")) {
+    return "dev_api";
+  }
+
+  return "fixture";
+}
+
+function hasDevApiReadThroughSignal(state: GatewayState): boolean {
+  return state.auditEvents.some(
+    (event) =>
+      event.targetId === "dev-api-read-through" &&
+      (event.actor === "dev-api-source" || event.metadata?.source === "dev-api")
   );
 }
 
@@ -95,6 +123,10 @@ function safeConfigSummary(configSummary: Record<string, string>): Record<string
   const safeSummary: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(configSummary)) {
+    if (isUnsafeConfigKey(key)) {
+      continue;
+    }
+
     if (isCredentialRefKey(key)) {
       if (isSafeCredentialRef(value)) {
         safeSummary[key] = value;
@@ -112,6 +144,39 @@ function safeConfigSummary(configSummary: Record<string, string>): Record<string
 
 function isCredentialRefKey(key: string): key is (typeof credentialRefKeys)[number] {
   return (credentialRefKeys as readonly string[]).includes(key);
+}
+
+function isUnsafeConfigKey(key: string): boolean {
+  const normalized = normalizeConfigKey(key);
+  const segments = normalized.split("_").filter(Boolean);
+
+  if (unsafeConfigKeySegments.has(normalized)) {
+    return true;
+  }
+
+  for (let index = 0; index < segments.length; index += 1) {
+    if (unsafeConfigKeySegments.has(segments[index])) {
+      return true;
+    }
+
+    if (unsafeConfigKeySegments.has(segments.slice(index, index + 2).join("_"))) {
+      return true;
+    }
+
+    if (unsafeConfigKeySegments.has(segments.slice(index, index + 3).join("_"))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeConfigKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .toLowerCase()
+    .replace(/^_+|_+$/g, "");
 }
 
 function isSafeCredentialRef(value: string | undefined): value is string {
