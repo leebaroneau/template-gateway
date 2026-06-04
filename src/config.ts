@@ -16,6 +16,8 @@ export interface GatewayConfig {
   haverfordDevApiBaseUrl?: string;
   haverfordDevApiClientId?: string;
   haverfordDevApiClientSecret?: string;
+  mcpAuthGateAllowedDomains?: string[];
+  mcpAuthGateAllowedUsers?: string[];
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -38,6 +40,15 @@ function parseToolkitAllowlist(raw?: string): string[] | undefined {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function parseCommaList(raw?: string): string[] | undefined {
+  if (!raw) return undefined;
+  const values = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return values.length === 0 ? undefined : Array.from(new Set(values));
 }
 
 function parsePort(raw?: string): number {
@@ -119,6 +130,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     gatewayStorePath: parseGatewayStorePath(env, adminDataSource),
     haverfordDevApiBaseUrl: optionalEnv(env, "HAVERFORD_DEV_API_BASE_URL"),
     haverfordDevApiClientId: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_ID"),
-    haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET")
+    haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET"),
+    mcpAuthGateAllowedDomains: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_DOMAINS),
+    mcpAuthGateAllowedUsers: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_USERS)
   };
 }

@@ -75,9 +75,11 @@ describe("API key secret utilities", () => {
 describe("gateway API scope helpers", () => {
   it("validates and de-duplicates known scopes in first-seen order", () => {
     expect(isGatewayApiScope("brands.read")).toBe(true);
+    expect(isGatewayApiScope("mcp.read")).toBe(true);
     expect(isGatewayApiScope("unknown.read")).toBe(false);
-    expect(validateGatewayApiScopes(["brands.read", "audit.read", "brands.read"])).toEqual([
+    expect(validateGatewayApiScopes(["brands.read", "mcp.read", "audit.read", "brands.read"])).toEqual([
       "brands.read",
+      "mcp.read",
       "audit.read"
     ]);
   });
@@ -93,5 +95,11 @@ describe("gateway API scope helpers", () => {
     expect(scopeAllowed(["api_clients.write"], "api_clients.read")).toBe(true);
     expect(scopeAllowed(["api_clients.read"], "api_clients.write")).toBe(false);
     expect(scopeAllowed(["brands.read"], "brands.read")).toBe(true);
+  });
+
+  it("treats mcp.read as its own explicit scope", () => {
+    expect(scopeAllowed(["mcp.read"], "mcp.read")).toBe(true);
+    expect(scopeAllowed(["connections.read"], "mcp.read")).toBe(false);
+    expect(scopeAllowed(["mcp.read"], "connections.read")).toBe(false);
   });
 });

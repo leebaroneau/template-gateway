@@ -19,6 +19,8 @@ describe("loadConfig", () => {
     delete process.env.HAVERFORD_DEV_API_BASE_URL;
     delete process.env.HAVERFORD_DEV_API_CLIENT_ID;
     delete process.env.HAVERFORD_DEV_API_CLIENT_SECRET;
+    delete process.env.MCP_AUTH_GATE_ALLOWED_DOMAINS;
+    delete process.env.MCP_AUTH_GATE_ALLOWED_USERS;
   });
 
   afterEach(() => {
@@ -46,6 +48,32 @@ describe("loadConfig", () => {
     expect(cfg.toolkitAllowlist).toBeUndefined();
     expect(cfg.adminDataSource).toBe("fixture");
     expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
+    expect(cfg.mcpAuthGateAllowedDomains).toBeUndefined();
+    expect(cfg.mcpAuthGateAllowedUsers).toBeUndefined();
+  });
+
+  it("leaves MCP Auth Gate allowlists disabled by default", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough"
+    });
+
+    expect(cfg.mcpAuthGateAllowedDomains).toBeUndefined();
+    expect(cfg.mcpAuthGateAllowedUsers).toBeUndefined();
+  });
+
+  it("parses MCP Auth Gate allowlists as lowercased arrays", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      MCP_AUTH_GATE_ALLOWED_DOMAINS: " Haverford.au, haverford.COM.AU ,, ",
+      MCP_AUTH_GATE_ALLOWED_USERS: " Lee@Haverford.au, Ops@Haverford.com.au "
+    });
+
+    expect(cfg.mcpAuthGateAllowedDomains).toEqual(["haverford.au", "haverford.com.au"]);
+    expect(cfg.mcpAuthGateAllowedUsers).toEqual(["lee@haverford.au", "ops@haverford.com.au"]);
   });
 
   it("parses Dev API admin data source settings", () => {

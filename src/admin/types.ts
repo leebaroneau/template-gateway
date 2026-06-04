@@ -25,7 +25,12 @@ export type AuditAction =
   | "api_auth.failed"
   | "api_scope.denied"
   | "api_read.succeeded"
-  | "api_read.failed";
+  | "api_read.failed"
+  | "mcp_auth.succeeded"
+  | "mcp_auth.failed"
+  | "mcp_tool.listed"
+  | "mcp_tool.called"
+  | "mcp_tool.failed";
 
 export interface Brand {
   id: string;
