@@ -9,8 +9,9 @@ export class AdminBackendError extends Error {
 }
 
 function hasStatusCode(error: unknown): error is { statusCode: number } {
+  const statusCode = error && typeof error === "object" ? (error as { statusCode?: unknown }).statusCode : undefined;
   return Boolean(
-    error && typeof error === "object" && typeof (error as { statusCode?: unknown }).statusCode === "number"
+    typeof statusCode === "number" && Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599
   );
 }
 
