@@ -116,8 +116,8 @@ export async function callGatewayMcpTool(
   args: unknown,
   state: GatewayState
 ): Promise<GatewayMcpToolResult> {
-  const parsedArgs = asArgs(args);
   try {
+    const parsedArgs = asArgs(args);
     switch (name) {
       case "gateway_list_brands":
         return listBrands(parsedArgs, state);

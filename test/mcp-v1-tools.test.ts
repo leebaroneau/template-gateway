@@ -164,4 +164,11 @@ describe("gateway MCP v1 tools", () => {
       content: [{ type: "text", text: "Unknown tool: missing_tool" }]
     });
   });
+
+  it("keeps non-object arguments as tool-level errors", async () => {
+    await expect(callGatewayMcpTool("gateway_list_brands", "not-an-object", await fixtureState())).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: "arguments must be an object" }]
+    });
+  });
 });
