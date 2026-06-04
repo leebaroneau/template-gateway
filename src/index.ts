@@ -10,6 +10,7 @@ import { createAdminRouter } from "./admin/routes.js";
 import type { GatewayConnectionBackend } from "./admin/types.js";
 import { GatewayAccessStore } from "./access/store.js";
 import { createGatewayApiRouter } from "./api/routes.js";
+import { createGatewayMcpV1Router } from "./mcp-v1/routes.js";
 
 interface CreateAppOptions {
   adminBackend?: GatewayConnectionBackend;
@@ -40,6 +41,15 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
 
   app.use("/admin", createAdminRouter(adminBackend, accessStore));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore }));
+  app.use(
+    "/mcp/v1",
+    createGatewayMcpV1Router({
+      backend: adminBackend,
+      accessStore,
+      authGateAllowedDomains: config.mcpAuthGateAllowedDomains,
+      authGateAllowedUsers: config.mcpAuthGateAllowedUsers
+    })
+  );
 
   const mcpRouter = express.Router();
   mcpRouter.use(express.json({ limit: "1mb" }));
