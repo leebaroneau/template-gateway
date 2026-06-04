@@ -206,6 +206,36 @@ describe("gateway API resources", () => {
     );
   });
 
+  it("omits gateway API secret values under ordinary config summary keys", () => {
+    const state: GatewayState = {
+      ...baseState,
+      connections: [
+        {
+          id: "connection_gateway_secret",
+          brandId: "brand_haverford",
+          regionId: "region_au",
+          connectorId: "connector_shopify",
+          backendType: "native",
+          displayName: "Gateway Secret Shopify",
+          status: "connected",
+          configSummary: {
+            shop_domain: "gw_live_abc123",
+            account_id: "GW_LIVE_DEF456",
+            display_name: "Haverford AU Shopify"
+          }
+        }
+      ]
+    };
+
+    const resource = toConnectionApiResource(state, state.connections[0]);
+
+    expect(resource.configSummary).toEqual({
+      display_name: "Haverford AU Shopify"
+    });
+    expect(JSON.stringify(resource)).not.toContain("gw_live_abc123");
+    expect(JSON.stringify(resource)).not.toContain("GW_LIVE_DEF456");
+  });
+
   it("infers Dev API source for mapped snapshots that do not include entity metadata", () => {
     const response: DevApiBrandsResponse = {
       brands: [
