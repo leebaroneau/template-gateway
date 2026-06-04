@@ -220,7 +220,7 @@ export class GoogleOAuthAdapter {
         this.store.updateCredentialStatus(
           credentialId,
           "needs_reconnect",
-          `Token refresh failed: ${response.status} ${text}`
+          `Token refresh failed: ${response.status} ${text.slice(0, 512)}`
         );
         return false;
       }
@@ -281,7 +281,7 @@ export class GoogleOAuthAdapter {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Token exchange failed: ${response.status} ${text}`);
+      throw new Error(`Token exchange failed: ${response.status} ${text.slice(0, 512)}`);
     }
 
     return (await response.json()) as TokenResponse;
@@ -297,7 +297,7 @@ export class GoogleOAuthAdapter {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`UserInfo fetch failed: ${response.status} ${text}`);
+      throw new Error(`UserInfo fetch failed: ${response.status} ${text.slice(0, 512)}`);
     }
 
     return (await response.json()) as UserInfoResponse;

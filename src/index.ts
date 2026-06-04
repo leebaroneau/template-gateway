@@ -32,8 +32,8 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   app.disable("x-powered-by");
   const adminBackend = options.adminBackend ?? buildAdminBackend(config);
   const accessStore = options.accessStore ?? new GatewayAccessStore(config.gatewayStorePath);
-  const googleStore = new GatewayGoogleStore(config.gatewayStorePath);
-  const googleAdapter = config.googleOAuth
+  const googleStore = config.googleOAuth ? new GatewayGoogleStore(config.gatewayStorePath) : undefined;
+  const googleAdapter = config.googleOAuth && googleStore
     ? new GoogleOAuthAdapter(config.googleOAuth, googleStore)
     : undefined;
 
