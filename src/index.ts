@@ -8,9 +8,12 @@ import { forwardJsonRpc, makeComposioSessionFactory } from "./mcp-proxy.js";
 import { buildAdminBackend } from "./admin/backend-factory.js";
 import { createAdminRouter } from "./admin/routes.js";
 import type { GatewayConnectionBackend } from "./admin/types.js";
+import { GatewayAccessStore } from "./access/store.js";
+import { createGatewayApiRouter } from "./api/routes.js";
 
 interface CreateAppOptions {
   adminBackend?: GatewayConnectionBackend;
+  accessStore?: GatewayAccessStore;
 }
 
 export function createApp(config = loadConfig(), options: CreateAppOptions = {}) {
@@ -23,6 +26,8 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   const cache = new SessionCache(factory, { ttlSeconds: config.sessionTtlSeconds });
   const app = express();
   app.disable("x-powered-by");
+  const adminBackend = options.adminBackend ?? buildAdminBackend(config);
+  const accessStore = options.accessStore ?? new GatewayAccessStore(config.gatewayStorePath);
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
@@ -33,7 +38,8 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     });
   });
 
-  app.use("/admin", createAdminRouter(options.adminBackend ?? buildAdminBackend(config)));
+  app.use("/admin", createAdminRouter(adminBackend));
+  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore }));
 
   const mcpRouter = express.Router();
   mcpRouter.use(express.json({ limit: "1mb" }));
