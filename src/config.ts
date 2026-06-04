@@ -1,4 +1,5 @@
 import "dotenv/config";
+import type { GoogleOAuthConfig } from "./google-oauth/adapter.js";
 
 export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-api-overlay";
 
@@ -18,6 +19,7 @@ export interface GatewayConfig {
   haverfordDevApiClientSecret?: string;
   mcpAuthGateAllowedDomains?: string[];
   mcpAuthGateAllowedUsers?: string[];
+  googleOAuth?: GoogleOAuthConfig;
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -114,6 +116,23 @@ function parseGatewayStorePath(env: NodeJS.ProcessEnv, dataSource: AdminDataSour
   return "./data/gateway.sqlite";
 }
 
+function parseGoogleOAuthConfig(env: NodeJS.ProcessEnv): GoogleOAuthConfig | undefined {
+  const clientId = optionalEnv(env, "GOOGLE_OAUTH_CLIENT_ID");
+  const clientSecret = optionalEnv(env, "GOOGLE_OAUTH_CLIENT_SECRET");
+  const redirectUri = optionalEnv(env, "GOOGLE_OAUTH_REDIRECT_URI");
+  const encryptionKey = optionalEnv(env, "GOOGLE_OAUTH_ENCRYPTION_KEY");
+
+  const set = [clientId, clientSecret, redirectUri, encryptionKey].filter(Boolean);
+  if (set.length === 0) return undefined;
+
+  if (!clientSecret) throw new Error("Missing required env var: GOOGLE_OAUTH_CLIENT_SECRET (required when GOOGLE_OAUTH_CLIENT_ID is set)");
+  if (!redirectUri) throw new Error("Missing required env var: GOOGLE_OAUTH_REDIRECT_URI (required when GOOGLE_OAUTH_CLIENT_ID is set)");
+  if (!encryptionKey) throw new Error("Missing required env var: GOOGLE_OAUTH_ENCRYPTION_KEY (required when GOOGLE_OAUTH_CLIENT_ID is set)");
+  if (!clientId) throw new Error("Missing required env var: GOOGLE_OAUTH_CLIENT_ID");
+
+  return { clientId, clientSecret, redirectUri, encryptionKey };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const adminDataSource = parseAdminDataSource(env.ADMIN_DATA_SOURCE);
 
@@ -132,6 +151,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     haverfordDevApiClientId: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_ID"),
     haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET"),
     mcpAuthGateAllowedDomains: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_DOMAINS),
-    mcpAuthGateAllowedUsers: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_USERS)
+    mcpAuthGateAllowedUsers: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_USERS),
+    googleOAuth: parseGoogleOAuthConfig(env)
   };
 }
