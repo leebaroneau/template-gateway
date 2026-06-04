@@ -25,6 +25,11 @@ describe("loadConfig", () => {
     delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
     delete process.env.GOOGLE_OAUTH_REDIRECT_URI;
     delete process.env.GOOGLE_OAUTH_ENCRYPTION_KEY;
+    delete process.env.SHOPIFY_OAUTH_API_KEY;
+    delete process.env.SHOPIFY_OAUTH_API_SECRET;
+    delete process.env.SHOPIFY_OAUTH_REDIRECT_URI;
+    delete process.env.SHOPIFY_OAUTH_ENCRYPTION_KEY;
+    delete process.env.SHOPIFY_OAUTH_SCOPES;
   });
 
   afterEach(() => {
@@ -246,6 +251,47 @@ describe("loadConfig", () => {
       process.env.GOOGLE_OAUTH_CLIENT_ID = "partial";
       expect(() => loadConfig()).toThrow(/GOOGLE_OAUTH_CLIENT_SECRET/);
       delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    });
+  });
+
+  describe("Shopify OAuth config", () => {
+    it("returns undefined when no SHOPIFY_OAUTH_* vars set", () => {
+      process.env.COMPOSIO_API_KEY = "ak_test";
+      process.env.BRAND_SLUG = "haverford";
+      process.env.GATEWAY_BEARER = "bearer_test";
+      const config = loadConfig();
+      expect(config.shopifyOAuth).toBeUndefined();
+    });
+
+    it("returns populated config when all vars set", () => {
+      const config = loadConfig({
+        COMPOSIO_API_KEY: "ak_test",
+        BRAND_SLUG: "haverford",
+        GATEWAY_BEARER: "bearer_test",
+        SHOPIFY_OAUTH_API_KEY: "test_key",
+        SHOPIFY_OAUTH_API_SECRET: "test_secret",
+        SHOPIFY_OAUTH_REDIRECT_URI: "https://example.com/callback",
+        SHOPIFY_OAUTH_ENCRYPTION_KEY: "test_enc_key",
+        SHOPIFY_OAUTH_SCOPES: "read_products,read_orders",
+      });
+      expect(config.shopifyOAuth).toMatchObject({
+        apiKey: "test_key",
+        apiSecret: "test_secret",
+        redirectUri: "https://example.com/callback",
+        encryptionKey: "test_enc_key",
+        scopes: ["read_products", "read_orders"],
+      });
+    });
+
+    it("throws when only API_KEY is set", () => {
+      expect(() =>
+        loadConfig({
+          COMPOSIO_API_KEY: "ak_test",
+          BRAND_SLUG: "haverford",
+          GATEWAY_BEARER: "bearer_test",
+          SHOPIFY_OAUTH_API_KEY: "test_key",
+        })
+      ).toThrow(/SHOPIFY_OAUTH_API_SECRET/);
     });
   });
 });

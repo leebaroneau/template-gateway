@@ -14,6 +14,9 @@ import { createGatewayMcpV1Router } from "./mcp-v1/routes.js";
 import { GoogleOAuthAdapter } from "./google-oauth/adapter.js";
 import { GatewayGoogleStore } from "./google-oauth/store.js";
 import { createGoogleOAuthRouter } from "./google-oauth/routes.js";
+import { ShopifyOAuthAdapter } from "./shopify-oauth/adapter.js";
+import { GatewayShopifyStore } from "./shopify-oauth/store.js";
+import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
 
 interface CreateAppOptions {
   adminBackend?: GatewayConnectionBackend;
@@ -35,6 +38,10 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   const googleStore = config.googleOAuth ? new GatewayGoogleStore(config.gatewayStorePath) : undefined;
   const googleAdapter = config.googleOAuth && googleStore
     ? new GoogleOAuthAdapter(config.googleOAuth, googleStore)
+    : undefined;
+  const shopifyStore = config.shopifyOAuth ? new GatewayShopifyStore(config.gatewayStorePath) : undefined;
+  const shopifyAdapter = config.shopifyOAuth && shopifyStore
+    ? new ShopifyOAuthAdapter(config.shopifyOAuth, shopifyStore)
     : undefined;
 
   app.get("/health", (_req: Request, res: Response) => {
@@ -65,6 +72,16 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
       adapter: googleAdapter,
       store: config.googleOAuth ? googleStore : undefined,
       bearer: config.gatewayBearer
+    })
+  );
+
+  app.use(
+    "/admin/shopify-oauth",
+    createShopifyOAuthRouter({
+      config: config.shopifyOAuth,
+      adapter: shopifyAdapter,
+      store: config.shopifyOAuth ? shopifyStore : undefined,
+      bearer: config.gatewayBearer,
     })
   );
 

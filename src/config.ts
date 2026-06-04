@@ -1,5 +1,6 @@
 import "dotenv/config";
 import type { GoogleOAuthConfig } from "./google-oauth/adapter.js";
+import type { ShopifyOAuthConfig } from "./shopify-oauth/adapter.js";
 
 export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-api-overlay";
 
@@ -20,6 +21,7 @@ export interface GatewayConfig {
   mcpAuthGateAllowedDomains?: string[];
   mcpAuthGateAllowedUsers?: string[];
   googleOAuth?: GoogleOAuthConfig;
+  shopifyOAuth?: ShopifyOAuthConfig;
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -133,6 +135,26 @@ function parseGoogleOAuthConfig(env: NodeJS.ProcessEnv): GoogleOAuthConfig | und
   return { clientId, clientSecret, redirectUri, encryptionKey };
 }
 
+function parseShopifyOAuthConfig(env: NodeJS.ProcessEnv): ShopifyOAuthConfig | undefined {
+  const apiKey = optionalEnv(env, "SHOPIFY_OAUTH_API_KEY");
+  const apiSecret = optionalEnv(env, "SHOPIFY_OAUTH_API_SECRET");
+  const redirectUri = optionalEnv(env, "SHOPIFY_OAUTH_REDIRECT_URI");
+  const encryptionKey = optionalEnv(env, "SHOPIFY_OAUTH_ENCRYPTION_KEY");
+  const scopesRaw = optionalEnv(env, "SHOPIFY_OAUTH_SCOPES");
+
+  const set = [apiKey, apiSecret, redirectUri, encryptionKey, scopesRaw].filter(Boolean);
+  if (set.length === 0) return undefined;
+
+  if (!apiKey) throw new Error("Missing required env var: SHOPIFY_OAUTH_API_KEY (required when SHOPIFY_OAUTH_API_SECRET is set)");
+  if (!apiSecret) throw new Error("Missing required env var: SHOPIFY_OAUTH_API_SECRET (required when SHOPIFY_OAUTH_API_KEY is set)");
+  if (!redirectUri) throw new Error("Missing required env var: SHOPIFY_OAUTH_REDIRECT_URI (required when SHOPIFY_OAUTH_API_KEY is set)");
+  if (!encryptionKey) throw new Error("Missing required env var: SHOPIFY_OAUTH_ENCRYPTION_KEY (required when SHOPIFY_OAUTH_API_KEY is set)");
+  if (!scopesRaw) throw new Error("Missing required env var: SHOPIFY_OAUTH_SCOPES (required when SHOPIFY_OAUTH_API_KEY is set)");
+
+  const scopes = scopesRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  return { apiKey, apiSecret, redirectUri, encryptionKey, scopes };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const adminDataSource = parseAdminDataSource(env.ADMIN_DATA_SOURCE);
 
@@ -152,6 +174,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET"),
     mcpAuthGateAllowedDomains: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_DOMAINS),
     mcpAuthGateAllowedUsers: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_USERS),
-    googleOAuth: parseGoogleOAuthConfig(env)
+    googleOAuth: parseGoogleOAuthConfig(env),
+    shopifyOAuth: parseShopifyOAuthConfig(env),
   };
 }
