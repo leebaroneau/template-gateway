@@ -151,6 +151,64 @@ authenticates, `requestCount24h` increases in `/admin/api/state`, and audit
 events include API key creation plus successful API auth/read entries. Raw
 `gw_live_...` secrets should not appear in `/admin/api/state` or `/api/v1/me`.
 
+## Local `/mcp/v1` metadata smoke
+
+`/mcp/v1` is the gateway-owned read-only MCP metadata endpoint. It is separate
+from the existing `/mcp` Composio proxy.
+
+Start the gateway with fixture overlay and a persistent local store:
+
+```bash
+export COMPOSIO_API_KEY=ak_local_dummy
+export BRAND_SLUG=haverford
+export GATEWAY_BEARER=a_secret_thats_long_enough
+export ADMIN_DATA_SOURCE=fixture-overlay
+export GATEWAY_STORE_PATH="$(pwd)/.tmp/gateway-mcp-v1.sqlite"
+export PORT=3000
+npm run dev
+```
+
+Create an API client with the `mcp.read` scope:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Local MCP Smoke","type":"agent","owner":"mcp@haverford.au","scopes":["mcp.read"]}'
+```
+
+Create a key for the returned `client.id`:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients/<client-id>/keys \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"local mcp smoke"}'
+```
+
+List MCP tools with the returned `gw_live_...` secret:
+
+```bash
+curl -s http://localhost:3000/mcp/v1 \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer <gw_live_secret>" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Call connection metadata:
+
+```bash
+curl -s http://localhost:3000/mcp/v1 \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer <gw_live_secret>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"gateway_list_connections","arguments":{"brandId":"brand_haverford"}}}'
+```
+
+Restart `npm run dev` with the same `GATEWAY_STORE_PATH`, then repeat the
+`tools/call` request. Expected: the same key still authenticates, the response
+contains `structuredContent.connections`, and `/admin/api/state` shows persisted
+usage and audit entries for `mcp_auth.succeeded`, `mcp_tool.listed`, and
+`mcp_tool.called`. Raw `gw_live_...` secrets should not appear in MCP responses
+or audit metadata.
+
 To use the gateway from a Hermes profile, add this to the profile's overlay:
 
 ```yaml
@@ -175,6 +233,8 @@ mybrand:
 | `HAVERFORD_DEV_API_BASE_URL` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Base URL for Haverford Dev API read-through mode |
 | `HAVERFORD_DEV_API_CLIENT_ID` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Internal client id sent to Haverford Dev API |
 | `HAVERFORD_DEV_API_CLIENT_SECRET` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Internal client secret sent to Haverford Dev API |
+| `MCP_AUTH_GATE_ALLOWED_DOMAINS` | no | Comma-separated domain allowlist for optional `/mcp/v1` Auth Gate identity access |
+| `MCP_AUTH_GATE_ALLOWED_USERS` | no | Comma-separated email allowlist for optional `/mcp/v1` Auth Gate identity access |
 | `TOOLKIT_ALLOWLIST` | no | Comma-separated, e.g. `outlook,one_drive,pipedrive` — defaults to all toolkits the API key sees |
 | `PORT` | no | Default `3000` |
 | `SESSION_TTL_SECONDS` | no | Tool Router session cache TTL; default `3600`, min `60` |

@@ -119,4 +119,20 @@ describe("forwardJsonRpc", () => {
     expect(res.status).toBe(401);
     expect(invalidateSpy).toHaveBeenCalledWith("user-marketing");
   });
+
+  it("does not route /mcp/v1 through the Composio proxy", async () => {
+    const upstreamFetch = makeFetch({
+      status: 200,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "upstream" }] } })
+    });
+    const { app } = buildApp({ fetchImpl: upstreamFetch });
+
+    const res = await request(app)
+      .post("/mcp/v1")
+      .set("Authorization", "Bearer a_secret_thats_long_enough")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+    expect(res.status).toBe(404);
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
 });
