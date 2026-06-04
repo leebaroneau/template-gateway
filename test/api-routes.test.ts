@@ -115,7 +115,29 @@ describe("/api/v1 gateway API routes", () => {
     expect(res.body).toEqual({
       error: { code: "forbidden", message: "Missing required scope: connections.read" }
     });
-    expect(store.listAuditEvents()[0]).toMatchObject({
+    expect(store.listApiClients()[0]).toMatchObject({ requestCount24h: 1, errorRate24h: 1 });
+    expect(store.listAuditEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "api_scope.denied",
+          metadata: expect.objectContaining({
+            route: "/api/v1/connections",
+            method: "GET",
+            requiredScope: "connections.read"
+          })
+        }),
+        expect.objectContaining({
+          action: "api_read.failed",
+          metadata: expect.objectContaining({
+            route: "/api/v1/connections",
+            method: "GET",
+            statusCode: "403",
+            requiredScope: "connections.read"
+          })
+        })
+      ])
+    );
+    expect(store.listAuditEvents().find((event) => event.action === "api_scope.denied")).toMatchObject({
       action: "api_scope.denied",
       metadata: { route: "/api/v1/connections", method: "GET", requiredScope: "connections.read" }
     });

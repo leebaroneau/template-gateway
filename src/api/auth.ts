@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { GatewayAccessStore } from "../access/store.js";
 import type { AuthenticatedGatewayApiClient, GatewayApiScope } from "../access/types.js";
-import { scopeAllowed } from "../access/types.js";
 import { GatewayApiError, sendGatewayApiError } from "./errors.js";
 
 declare module "express-serve-static-core" {
@@ -61,23 +60,6 @@ export function gatewayApiAuth(accessStore: GatewayAccessStore, requiredScope?: 
           requiredScope: requiredScope ?? ""
         }
       });
-
-      if (requiredScope !== undefined && !scopeAllowed(authenticated.client.scopes, requiredScope)) {
-        accessStore.writeAccessAudit({
-          action: "api_scope.denied",
-          targetType: "api_client",
-          targetId: authenticated.client.id,
-          detail: `Missing required scope: ${requiredScope}`,
-          actor: authenticated.client.id,
-          metadata: {
-            route: req.originalUrl,
-            method: req.method,
-            fingerprint: authenticated.key.fingerprint,
-            requiredScope
-          }
-        });
-        throw new GatewayApiError(403, "forbidden", `Missing required scope: ${requiredScope}`);
-      }
 
       next();
     } catch (error) {

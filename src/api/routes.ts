@@ -2,6 +2,7 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayApiScope } from "../access/types.js";
+import { scopeAllowed } from "../access/types.js";
 import type { GatewayConnectionBackend, GatewayState } from "../admin/types.js";
 import { gatewayApiAuth } from "./auth.js";
 import { GatewayApiError, sendGatewayApiError } from "./errors.js";
@@ -61,6 +62,31 @@ function recordApiRead(
   });
 }
 
+function assertGatewayApiScope(req: Request, accessStore: GatewayAccessStore, requiredScope?: GatewayApiScope): void {
+  const authenticated = req.gatewayApiAuth;
+  if (authenticated === undefined) {
+    throw new GatewayApiError(401, "unauthorized", "Missing bearer token");
+  }
+  if (requiredScope === undefined || scopeAllowed(authenticated.client.scopes, requiredScope)) {
+    return;
+  }
+
+  accessStore.writeAccessAudit({
+    action: "api_scope.denied",
+    targetType: "api_client",
+    targetId: authenticated.client.id,
+    detail: `Missing required scope: ${requiredScope}`,
+    actor: authenticated.client.id,
+    metadata: {
+      route: req.originalUrl,
+      method: req.method,
+      fingerprint: authenticated.key.fingerprint,
+      requiredScope
+    }
+  });
+  throw new GatewayApiError(403, "forbidden", `Missing required scope: ${requiredScope}`);
+}
+
 function gatewayApiRead(
   accessStore: GatewayAccessStore,
   requiredScope: GatewayApiScope | undefined,
@@ -71,6 +97,7 @@ function gatewayApiRead(
     async (req: Request, res: Response, next: NextFunction) => {
       const startedAt = Date.now();
       try {
+        assertGatewayApiScope(req, accessStore, requiredScope);
         const body = await handler(req);
         recordApiRead(accessStore, req, 200, readDurationMs(startedAt), true);
         res.json(body);
