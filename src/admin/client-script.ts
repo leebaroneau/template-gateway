@@ -1,5 +1,15 @@
 function adminClientApp() {
   type Item = Record<string, any>;
+  type SecretReveal = {
+    action: string;
+    clientId: string;
+    keyId?: string;
+    clientName: string;
+    keyLabel: string;
+    preview?: string;
+    fingerprint?: string;
+    secret: string;
+  };
   type UiState = {
     data: Item | null;
     view: string;
@@ -7,6 +17,7 @@ function adminClientApp() {
     selectedRegionId: string | null;
     selectedConnectorId: string | null;
     selectedConnectionId: string | null;
+    secretReveal: SecretReveal | null;
   };
 
   const root = document.getElementById("app-root") as HTMLElement | null;
@@ -17,8 +28,18 @@ function adminClientApp() {
     selectedBrandId: null,
     selectedRegionId: null,
     selectedConnectorId: null,
-    selectedConnectionId: null
+    selectedConnectionId: null,
+    secretReveal: null
   };
+  const ACCESS_SCOPES = [
+    "brands.read",
+    "regions.read",
+    "connectors.read",
+    "connections.read",
+    "api_clients.read",
+    "api_clients.write",
+    "audit.read"
+  ];
 
   if (!root || !errorPanel) {
     return;
@@ -114,6 +135,14 @@ function adminClientApp() {
       return "0.0%";
     }
     return `${(number * 100).toFixed(1)}%`;
+  }
+
+  function formatCount(value: unknown): string {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "0";
+    }
+    return number.toLocaleString();
   }
 
   function collection(name: string): Item[] {
@@ -652,33 +681,173 @@ function adminClientApp() {
       </section>`;
   }
 
-  function renderApiAccess(): string {
-    const rows = collection("apiClients")
-      .flatMap((client) =>
-        ((client.keys ?? []) as Item[]).map(
-          (key) => `<tr>
-            <td><strong>${h(client.name)}</strong><div class="small muted">${h(client.owner)} / ${h(client.type)}</div></td>
-            <td>${h(key.label)}<div class="small muted">${h(key.preview)}</div></td>
-            <td>${statusBadge(key.status)}</td>
-            <td>${h(client.requestCount24h)} requests<br><span class="small muted">${h(formatPercent(client.errorRate24h))} errors</span></td>
-            <td>${chips((client.scopes ?? []) as unknown[])}</td>
-            <td class="button-row">
-              <button class="btn lifecycle" type="button" data-action="rotate-key" data-client-id="${h(client.id)}" data-key-id="${h(key.id)}" ${key.status === "revoked" ? "disabled" : ""}>Rotate</button>
-              <button class="btn btn-danger lifecycle" type="button" data-action="revoke-key" data-client-id="${h(client.id)}" data-key-id="${h(key.id)}" ${key.status === "revoked" ? "disabled" : ""}>Revoke</button>
-            </td>
-          </tr>`
-        )
-      )
+  function apiAccessAuditEvents(): Item[] {
+    return collection("auditEvents").filter((event) => {
+      const action = String(event.action ?? "");
+      return action.startsWith("api_") || event.targetType === "api_key" || event.targetType === "api_client";
+    });
+  }
+
+  function renderSecretReveal(): string {
+    const reveal = uiState.secretReveal;
+    if (!reveal) {
+      return "";
+    }
+    return `<section class="secret-reveal" aria-live="polite">
+      <div>
+        <strong>One-time ${h(reveal.action)} secret</strong>
+        <div class="small muted">${h(reveal.clientName)} / ${h(reveal.keyLabel)}${reveal.preview ? ` / ${h(reveal.preview)}` : ""}</div>
+      </div>
+      <code>${h(reveal.secret)}</code>
+      <div class="button-row">
+        <button class="btn" type="button" data-action="copy-secret">Copy</button>
+        <button class="btn" type="button" data-action="dismiss-secret">Clear</button>
+      </div>
+    </section>`;
+  }
+
+  function scopeCheckboxes(selectedScopes: unknown[] = []): string {
+    const selected = new Set(selectedScopes.map((scope) => String(scope)));
+    return `<div class="scope-checklist">
+      ${ACCESS_SCOPES.map(
+        (scope) => `<label>
+          <input type="checkbox" name="scopes" value="${h(scope)}" ${selected.has(scope) ? "checked" : ""}>
+          <span>${h(scope)}</span>
+        </label>`
+      ).join("")}
+    </div>`;
+  }
+
+  function accessMetric(label: string, value: string): string {
+    return `<div class="access-meta-item"><span>${h(label)}</span><strong>${value}</strong></div>`;
+  }
+
+  function renderKeyRows(client: Item): string {
+    const keys = Array.isArray(client.keys) ? client.keys : [];
+    if (!keys.length) {
+      return `<tr><td colspan="9" class="muted">No keys for this client.</td></tr>`;
+    }
+    return keys
+      .map((key) => {
+        const hasLifecycleActions = client.status === "active" && key.status === "active";
+        return `<tr>
+          <td><strong>${h(key.label)}</strong></td>
+          <td class="truncate">${h(key.preview)}</td>
+          <td class="truncate mono">${h(key.fingerprint)}</td>
+          <td>${statusBadge(key.status)}</td>
+          <td>${h(formatDate(key.createdAt))}</td>
+          <td>${h(formatDate(key.rotatedAt))}</td>
+          <td>${h(formatDate(key.revokedAt))}</td>
+          <td>${h(formatDate(key.lastUsedAt))}</td>
+          <td class="button-row">
+            ${
+              hasLifecycleActions
+                ? `<button class="btn lifecycle" type="button" data-action="rotate-key" data-client-id="${h(client.id)}" data-key-id="${h(key.id)}">Rotate</button>
+                  <button class="btn btn-danger lifecycle" type="button" data-action="revoke-key" data-client-id="${h(client.id)}" data-key-id="${h(key.id)}">Revoke</button>`
+                : `<span class="small muted">No actions</span>`
+            }
+          </td>
+        </tr>`;
+      })
       .join("");
-    return `${viewHeader("API Access", "Service, agent, and worker API clients.")}
-      <section class="panel">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Client</th><th>Key</th><th>Status</th><th>24h</th><th>Scopes</th><th>Lifecycle</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
+  }
+
+  function renderApiClient(client: Item): string {
+    const keys = Array.isArray(client.keys) ? client.keys : [];
+    return `<section class="access-client">
+      <div class="access-client-header">
+        <div>
+          <h3>${h(client.name)}</h3>
+          <div class="small muted">${h(client.owner)} / ${h(client.type)}</div>
         </div>
-      </section>`;
+        <div class="button-row">
+          ${statusBadge(client.status)}
+          <button class="btn" type="button" data-action="create-key" data-client-id="${h(client.id)}" ${client.status === "active" ? "" : "disabled"}>Create key</button>
+        </div>
+      </div>
+      <div class="access-client-meta">
+        ${accessMetric("Owner", h(client.owner))}
+        ${accessMetric("Type", h(client.type))}
+        ${accessMetric("Status", statusBadge(client.status))}
+        ${accessMetric("Keys", h(keys.length))}
+        ${accessMetric("24h requests", h(formatCount(client.requestCount24h)))}
+        ${accessMetric("24h error rate", h(formatPercent(client.errorRate24h)))}
+        ${accessMetric("Last used", h(formatDate(client.lastUsedAt)))}
+        <div class="access-meta-item access-scopes"><span>Scopes</span>${chips((client.scopes ?? []) as unknown[])}</div>
+      </div>
+      <div class="access-key-list">
+        <table>
+          <thead><tr><th>Label</th><th>Preview</th><th>Fingerprint</th><th>Status</th><th>Created</th><th>Rotated</th><th>Revoked</th><th>Last used</th><th>Actions</th></tr></thead>
+          <tbody>${renderKeyRows(client)}</tbody>
+        </table>
+      </div>
+    </section>`;
+  }
+
+  function renderAccessAudit(): string {
+    const events = apiAccessAuditEvents().slice(0, 8);
+    if (!events.length) {
+      return "";
+    }
+    return `<section class="panel">
+      <div class="panel-header"><div><h3>Access audit</h3><p>Latest API access events.</p></div></div>
+      <ul class="audit-compact">
+        ${events
+          .map(
+            (event) => `<li>
+              <strong>${h(event.action)}</strong>
+              <span>${h(event.detail)}</span>
+              <span class="small muted">${h(formatDate(event.timestamp))} / ${h(event.actor)}</span>
+            </li>`
+          )
+          .join("")}
+      </ul>
+    </section>`;
+  }
+
+  function renderCreateApiClientForm(): string {
+    return `<section class="panel">
+      <div class="panel-header"><div><h3>Create client</h3><p>Provision API access for local services and agents.</p></div></div>
+      <form data-action="create-api-client" class="form-grid inline-edit">
+        <label>
+          Name
+          <input name="name" required placeholder="Local API client">
+        </label>
+        <label>
+          Owner
+          <input name="owner" required placeholder="ops@haverford.au">
+        </label>
+        <label class="span-2">
+          Type
+          <select name="type">
+            ${valueOptions(["service", "agent", "worker"], "service")}
+          </select>
+        </label>
+        <div class="span-2">
+          <label>Scopes</label>
+          ${scopeCheckboxes()}
+        </div>
+        <div class="button-row span-2">
+          <button class="btn btn-primary" type="submit">Create client</button>
+        </div>
+      </form>
+    </section>`;
+  }
+
+  function renderApiAccess(): string {
+    const clients = collection("apiClients");
+    const clientList = clients.length
+      ? `<div class="access-client-list">${clients.map((client) => renderApiClient(client)).join("")}</div>`
+      : `<div class="empty-panel">No API clients yet. Create one to test /api/v1 locally.</div>`;
+    return `${viewHeader("API Access", "Service, agent, and worker API clients.")}
+      ${renderSecretReveal()}
+      <div class="access-grid">
+        ${clientList}
+        <div class="workspace">
+          ${renderCreateApiClientForm()}
+          ${renderAccessAudit()}
+        </div>
+      </div>`;
   }
 
   function renderAudit(): string {
@@ -720,6 +889,44 @@ function adminClientApp() {
   function formText(form: HTMLFormElement, name: string): string {
     const value = new FormData(form).get(name);
     return typeof value === "string" ? value : "";
+  }
+
+  function formValues(form: HTMLFormElement, name: string): string[] {
+    return new FormData(form)
+      .getAll(name)
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim());
+  }
+
+  function revealSecret(result: Item, action: string, clientId: string, fallbackLabel: string): void {
+    if (typeof result.secret !== "string" || !result.secret) {
+      uiState.secretReveal = null;
+      return;
+    }
+    const key = (result.key ?? {}) as Item;
+    const client = byId("apiClients", clientId);
+    uiState.secretReveal = {
+      action,
+      clientId,
+      keyId: typeof key.id === "string" ? key.id : undefined,
+      clientName: String(client?.name ?? clientId),
+      keyLabel: String(key.label ?? fallbackLabel),
+      preview: typeof key.preview === "string" ? key.preview : undefined,
+      fingerprint: typeof key.fingerprint === "string" ? key.fingerprint : undefined,
+      secret: result.secret
+    };
+  }
+
+  async function copySecret(): Promise<void> {
+    const secret = uiState.secretReveal?.secret;
+    if (!secret) {
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(secret);
+      return;
+    }
+    throw new Error("Clipboard API is not available.");
   }
 
   function configSummaryFromForm(form: HTMLFormElement): Item {
@@ -813,6 +1020,18 @@ function adminClientApp() {
       render();
       return;
     }
+    if (action === "create-api-client") {
+      const result = await postJson("/admin/api/api-clients", {
+        name: field(form, "name"),
+        owner: field(form, "owner"),
+        type: field(form, "type"),
+        scopes: formValues(form, "scopes")
+      });
+      applyState(result.state);
+      uiState.secretReveal = null;
+      render();
+      return;
+    }
     if (action === "update-connection") {
       const connectionId = form.dataset.connectionId;
       if (!connectionId) {
@@ -854,11 +1073,38 @@ function adminClientApp() {
       render();
       return;
     }
+    if (action === "create-key" && button.dataset.clientId) {
+      const label = prompt("API key label", "primary");
+      if (label === null) {
+        return;
+      }
+      const trimmedLabel = label.trim();
+      if (!trimmedLabel) {
+        throw new Error("API key label is required.");
+      }
+      const result = await postJson(`/admin/api/api-clients/${encodeURIComponent(button.dataset.clientId)}/keys`, {
+        label: trimmedLabel
+      });
+      applyState(result.state);
+      revealSecret(result, "created", button.dataset.clientId, trimmedLabel);
+      render();
+      return;
+    }
+    if (action === "copy-secret") {
+      await copySecret();
+      return;
+    }
+    if (action === "dismiss-secret") {
+      uiState.secretReveal = null;
+      render();
+      return;
+    }
     if (action === "rotate-key" && button.dataset.clientId && button.dataset.keyId) {
       const result = await postJson(
         `/admin/api/api-clients/${encodeURIComponent(button.dataset.clientId)}/keys/${encodeURIComponent(button.dataset.keyId)}/rotate`
       );
       applyState(result.state);
+      revealSecret(result, "rotated", button.dataset.clientId, "rotated key");
       render();
       return;
     }
@@ -867,6 +1113,9 @@ function adminClientApp() {
         `/admin/api/api-clients/${encodeURIComponent(button.dataset.clientId)}/keys/${encodeURIComponent(button.dataset.keyId)}/revoke`
       );
       applyState(result.state);
+      if (uiState.secretReveal?.clientId === button.dataset.clientId && uiState.secretReveal.keyId === button.dataset.keyId) {
+        uiState.secretReveal = null;
+      }
       render();
     }
   }

@@ -498,6 +498,177 @@ textarea {
   display: inline-flex;
 }
 
+.access-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 12px;
+  align-items: start;
+}
+
+.access-client-list {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.access-client {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.access-client-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.access-client-header h3 {
+  margin-bottom: 3px;
+}
+
+.access-client-header > div:first-child {
+  min-width: 0;
+}
+
+.access-client-header strong,
+.access-client-header h3,
+.access-meta-item > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-client-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.access-meta-item {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.access-meta-item > span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.access-meta-item > strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.access-scopes {
+  grid-column: span 2;
+}
+
+.access-scopes .chip-row {
+  margin-top: 5px;
+}
+
+.access-key-list {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.access-key-list table {
+  min-width: 980px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.secret-reveal {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #98cbb5;
+  border-radius: 8px;
+  background: #eef8f3;
+}
+
+.secret-reveal code {
+  display: block;
+  max-width: 100%;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid #b6d9c8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #173b2b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.scope-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin-top: 5px;
+}
+
+.scope-checklist label {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.scope-checklist input {
+  width: auto;
+  min-height: auto;
+  flex: 0 0 auto;
+}
+
+.scope-checklist span,
+.audit-compact span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.audit-compact {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-compact li {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.audit-compact strong {
+  font-size: 12px;
+}
+
 .error-panel {
   max-width: 1360px;
   margin: 0 0 12px;
@@ -539,9 +710,16 @@ textarea {
   .metrics-grid,
   .grid-two,
   .grid-wide,
+  .access-grid,
+  .access-client-meta,
   .form-grid,
-  .select-pair {
+  .select-pair,
+  .scope-checklist {
     grid-template-columns: 1fr;
+  }
+
+  .access-scopes {
+    grid-column: auto;
   }
 
   .form-grid .span-2 {
