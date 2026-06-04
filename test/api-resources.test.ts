@@ -154,7 +154,10 @@ describe("gateway API resources", () => {
           status: "connected",
           configSummary: {
             api_key: "ordinary setting",
+            APIKey: "ordinary setting",
+            apiKey: "ordinary setting",
             access_token: "ordinary setting",
+            AccessToken: "ordinary setting",
             "access-token": "ordinary setting",
             authorization: "ordinary setting",
             bearer: "ordinary setting",
@@ -162,6 +165,7 @@ describe("gateway API resources", () => {
             secret: "ordinary setting",
             password: "ordinary setting",
             private_key: "ordinary setting",
+            PrivateKey: "ordinary setting",
             privateKey: "ordinary setting",
             service_account_token: "ordinary setting",
             serviceAccountToken: "ordinary setting",
@@ -183,7 +187,10 @@ describe("gateway API resources", () => {
     expect(Object.keys(resource.configSummary)).not.toEqual(
       expect.arrayContaining([
         "api_key",
+        "APIKey",
+        "apiKey",
         "access_token",
+        "AccessToken",
         "access-token",
         "authorization",
         "bearer",
@@ -191,6 +198,7 @@ describe("gateway API resources", () => {
         "secret",
         "password",
         "private_key",
+        "PrivateKey",
         "privateKey",
         "service_account_token",
         "serviceAccountToken"

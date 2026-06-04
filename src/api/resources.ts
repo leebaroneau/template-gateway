@@ -38,17 +38,17 @@ export interface GatewayApiResources {
 const credentialRefKeys = ["credential_ref", "credentialRef", "credential_group"] as const;
 const unsafeCredentialRefPattern =
   /bearer|token|secret|password|private_key|BEGIN|ya29|shpat_|xox|sk_|\{|\}/i;
-const unsafeConfigKeySegments = new Set([
-  "api_key",
-  "access_token",
+const unsafeConfigKeyTokens = [
+  "apikey",
+  "accesstoken",
   "authorization",
   "bearer",
   "token",
   "secret",
   "password",
-  "private_key",
-  "service_account_token"
-]);
+  "privatekey",
+  "serviceaccounttoken"
+];
 
 export function toGatewayApiResources(state: GatewayState): GatewayApiResources {
   return {
@@ -148,35 +148,11 @@ function isCredentialRefKey(key: string): key is (typeof credentialRefKeys)[numb
 
 function isUnsafeConfigKey(key: string): boolean {
   const normalized = normalizeConfigKey(key);
-  const segments = normalized.split("_").filter(Boolean);
-
-  if (unsafeConfigKeySegments.has(normalized)) {
-    return true;
-  }
-
-  for (let index = 0; index < segments.length; index += 1) {
-    if (unsafeConfigKeySegments.has(segments[index])) {
-      return true;
-    }
-
-    if (unsafeConfigKeySegments.has(segments.slice(index, index + 2).join("_"))) {
-      return true;
-    }
-
-    if (unsafeConfigKeySegments.has(segments.slice(index, index + 3).join("_"))) {
-      return true;
-    }
-  }
-
-  return false;
+  return unsafeConfigKeyTokens.some((token) => normalized.includes(token));
 }
 
 function normalizeConfigKey(key: string): string {
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^a-zA-Z0-9]+/g, "_")
-    .toLowerCase()
-    .replace(/^_+|_+$/g, "");
+  return key.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function isSafeCredentialRef(value: string | undefined): value is string {
