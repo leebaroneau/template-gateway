@@ -89,6 +89,17 @@ function sortAuditEventsNewestFirst(events: AuditEvent[]): AuditEvent[] {
   });
 }
 
+function dedupeAuditEventsById(events: AuditEvent[]): AuditEvent[] {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    if (seen.has(event.id)) {
+      return false;
+    }
+    seen.add(event.id);
+    return true;
+  });
+}
+
 function entityTypeFromParam(value: string): GatewayEntityType {
   if (value === "brand" || value === "region" || value === "connection") {
     return value;
@@ -110,7 +121,9 @@ export function createAdminRouter(
     return {
       ...backendState,
       apiClients: accessStore.listApiClients(),
-      auditEvents: sortAuditEventsNewestFirst([...accessStore.listAuditEvents(), ...backendState.auditEvents])
+      auditEvents: dedupeAuditEventsById(
+        sortAuditEventsNewestFirst([...accessStore.listAuditEvents(), ...backendState.auditEvents])
+      )
     };
   }
 

@@ -567,6 +567,51 @@ describe("admin routes", () => {
     );
   });
 
+  it("dedupes access audit events already present in backend snapshots", async () => {
+    const store = openAccessStore();
+    const client = store.createClient(
+      {
+        name: "Deduped Audit Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      },
+      "setup"
+    );
+    const accessAuditEvent = store.listAuditEvents()[0];
+    const fixtureBackend = asyncBackendFromFixture();
+    const backend = {
+      ...fixtureBackend,
+      snapshot: async () => {
+        const fixtureState = await fixtureBackend.snapshot();
+        return {
+          ...fixtureState,
+          auditEvents: [
+            {
+              ...accessAuditEvent,
+              timestamp: "2000-01-01T00:00:00.000Z"
+            },
+            ...fixtureState.auditEvents
+          ]
+        };
+      }
+    } satisfies GatewayConnectionBackend;
+    const { app } = buildAdminApp(backend, store);
+
+    const res = await request(app).get("/admin/api/state");
+    const duplicateIds = res.body.auditEvents
+      .map((event: { id: string }) => event.id)
+      .filter((id: string) => id === accessAuditEvent.id);
+
+    expect(res.status).toBe(200);
+    expect(res.body.apiClients).toContainEqual(client);
+    expect(duplicateIds).toHaveLength(1);
+    expect(res.body.auditEvents[0]).toMatchObject({
+      id: accessAuditEvent.id,
+      timestamp: accessAuditEvent.timestamp
+    });
+  });
+
   it("returns 503 for access store management routes when no access store is configured", async () => {
     const { app } = buildAdminApp();
     const expected = { error: "Gateway access store is not configured" };
