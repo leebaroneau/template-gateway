@@ -11,6 +11,9 @@ import type { GatewayConnectionBackend } from "./admin/types.js";
 import { GatewayAccessStore } from "./access/store.js";
 import { createGatewayApiRouter } from "./api/routes.js";
 import { createGatewayMcpV1Router } from "./mcp-v1/routes.js";
+import { GoogleOAuthAdapter } from "./google-oauth/adapter.js";
+import { GatewayGoogleStore } from "./google-oauth/store.js";
+import { createGoogleOAuthRouter } from "./google-oauth/routes.js";
 
 interface CreateAppOptions {
   adminBackend?: GatewayConnectionBackend;
@@ -29,6 +32,10 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   app.disable("x-powered-by");
   const adminBackend = options.adminBackend ?? buildAdminBackend(config);
   const accessStore = options.accessStore ?? new GatewayAccessStore(config.gatewayStorePath);
+  const googleStore = config.googleOAuth ? new GatewayGoogleStore(config.gatewayStorePath) : undefined;
+  const googleAdapter = config.googleOAuth && googleStore
+    ? new GoogleOAuthAdapter(config.googleOAuth, googleStore)
+    : undefined;
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
@@ -48,6 +55,16 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
       accessStore,
       authGateAllowedDomains: config.mcpAuthGateAllowedDomains,
       authGateAllowedUsers: config.mcpAuthGateAllowedUsers
+    })
+  );
+
+  app.use(
+    "/admin/google-oauth",
+    createGoogleOAuthRouter({
+      config: config.googleOAuth,
+      adapter: googleAdapter,
+      store: config.googleOAuth ? googleStore : undefined,
+      bearer: config.gatewayBearer
     })
   );
 

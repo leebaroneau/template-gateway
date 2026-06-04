@@ -21,6 +21,10 @@ describe("loadConfig", () => {
     delete process.env.HAVERFORD_DEV_API_CLIENT_SECRET;
     delete process.env.MCP_AUTH_GATE_ALLOWED_DOMAINS;
     delete process.env.MCP_AUTH_GATE_ALLOWED_USERS;
+    delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    delete process.env.GOOGLE_OAUTH_REDIRECT_URI;
+    delete process.env.GOOGLE_OAUTH_ENCRYPTION_KEY;
   });
 
   afterEach(() => {
@@ -204,5 +208,44 @@ describe("loadConfig", () => {
     process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
     process.env.AUTH_CONFIGS = "outlook";
     expect(() => loadConfig()).toThrow(/toolkit:ac_xxx/);
+  });
+
+  describe("Google OAuth config", () => {
+    it("is undefined when no GOOGLE_OAUTH_* vars are set", () => {
+      process.env.COMPOSIO_API_KEY = "ak_test";
+      process.env.BRAND_SLUG = "haverford";
+      process.env.GATEWAY_BEARER = "bearer_test";
+      const config = loadConfig();
+      expect(config.googleOAuth).toBeUndefined();
+    });
+
+    it("is populated when all GOOGLE_OAUTH_* vars are set", () => {
+      process.env.COMPOSIO_API_KEY = "ak_test";
+      process.env.BRAND_SLUG = "haverford";
+      process.env.GATEWAY_BEARER = "bearer_test";
+      process.env.GOOGLE_OAUTH_CLIENT_ID = "client_id.apps.googleusercontent.com";
+      process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client_secret";
+      process.env.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:3000/admin/google-oauth/callback";
+      process.env.GOOGLE_OAUTH_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString("base64url");
+      const config = loadConfig();
+      expect(config.googleOAuth).toMatchObject({
+        clientId: "client_id.apps.googleusercontent.com",
+        clientSecret: "client_secret",
+        redirectUri: "http://localhost:3000/admin/google-oauth/callback"
+      });
+      delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+      delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+      delete process.env.GOOGLE_OAUTH_REDIRECT_URI;
+      delete process.env.GOOGLE_OAUTH_ENCRYPTION_KEY;
+    });
+
+    it("throws if only some GOOGLE_OAUTH_* vars are set", () => {
+      process.env.COMPOSIO_API_KEY = "ak_test";
+      process.env.BRAND_SLUG = "haverford";
+      process.env.GATEWAY_BEARER = "bearer_test";
+      process.env.GOOGLE_OAUTH_CLIENT_ID = "partial";
+      expect(() => loadConfig()).toThrow(/GOOGLE_OAUTH_CLIENT_SECRET/);
+      delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    });
   });
 });
