@@ -1,9 +1,10 @@
 import express from "express";
+import Database from "better-sqlite3";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GatewayAccessStore } from "../src/access/store.js";
 import type { GatewayApiScope } from "../src/access/types.js";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
@@ -21,9 +22,34 @@ function tempStorePath(): string {
 }
 
 function openStore(): GatewayAccessStore {
-  const store = new GatewayAccessStore(tempStorePath());
+  return openStoreAt(tempStorePath());
+}
+
+function openStoreAt(dbPath: string): GatewayAccessStore {
+  const store = new GatewayAccessStore(dbPath);
   stores.push(store);
   return store;
+}
+
+function latestUsageRoute(dbPath: string): string {
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    const row = db
+      .prepare("SELECT route FROM gateway_api_usage ORDER BY occurred_at DESC, rowid DESC LIMIT 1")
+      .get() as { route: string } | undefined;
+    if (row === undefined) {
+      throw new Error("Expected a gateway API usage row");
+    }
+    return row.route;
+  } finally {
+    db.close();
+  }
+}
+
+class ThrowingSnapshotBackend extends FixtureGatewayBackend {
+  override snapshot(): never {
+    throw new Error("backend snapshot exploded with access_token=leak");
+  }
 }
 
 function appWithStore(store: GatewayAccessStore, backend = new FixtureGatewayBackend()) {
@@ -163,6 +189,43 @@ describe("/api/v1 gateway API routes", () => {
     });
   });
 
+  it("returns structured 404s for authenticated unknown gateway API routes", async () => {
+    const store = openStore();
+    const { secret } = createApiCredential(store, ["brands.read"]);
+
+    const res = await request(appWithStore(store))
+      .get("/api/v1/unknown")
+      .set("Authorization", `Bearer ${secret}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({
+      error: { code: "not_found", message: "Gateway API route not found: GET /api/v1/unknown" }
+    });
+    expect(store.listApiClients()[0]).toMatchObject({ requestCount24h: 1, errorRate24h: 1 });
+    expect(store.listAuditEvents()[0]).toMatchObject({
+      action: "api_read.failed",
+      metadata: {
+        route: "/api/v1/unknown",
+        method: "GET",
+        statusCode: "404",
+        requiredScope: ""
+      }
+    });
+  });
+
+  it("requires authentication before returning unknown gateway API route 404s", async () => {
+    const store = openStore();
+
+    const res = await request(appWithStore(store)).get("/api/v1/unknown");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: { code: "unauthorized", message: "Missing bearer token" } });
+    expect(store.listAuditEvents()[0]).toMatchObject({
+      action: "api_auth.failed",
+      metadata: { route: "/api/v1/unknown", method: "GET", reason: "missing_bearer" }
+    });
+  });
+
   it("persists usage and audit records for API reads", async () => {
     const store = openStore();
     const { key, secret } = createApiCredential(store, ["brands.read"]);
@@ -183,6 +246,55 @@ describe("/api/v1 gateway API routes", () => {
       }
     });
     expect(JSON.stringify(store.listAuditEvents())).not.toContain(secret);
+  });
+
+  it("persists query-free paths in usage and audit records", async () => {
+    const dbPath = tempStorePath();
+    const store = openStoreAt(dbPath);
+    const { secret } = createApiCredential(store, ["brands.read"]);
+
+    await request(appWithStore(store))
+      .get("/api/v1/brands?api_key=leak&access_token=leak")
+      .set("Authorization", `Bearer ${secret}`)
+      .expect(200);
+
+    expect(latestUsageRoute(dbPath)).toBe("/api/v1/brands");
+
+    const requestAuditRecords = store
+      .listAuditEvents()
+      .filter((event) => event.action === "api_auth.succeeded" || event.action === "api_read.succeeded")
+      .map((event) => ({ detail: event.detail, metadata: event.metadata }));
+    expect(requestAuditRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metadata: expect.objectContaining({ route: "/api/v1/brands" }) })
+      ])
+    );
+    const serializedAuditRecords = JSON.stringify(requestAuditRecords);
+    expect(serializedAuditRecords).not.toContain("api_key");
+    expect(serializedAuditRecords).not.toContain("access_token");
+    expect(serializedAuditRecords).not.toContain("leak");
+  });
+
+  it("returns generic 500 responses for internal backend errors", async () => {
+    const store = openStore();
+    const { secret } = createApiCredential(store, ["brands.read"]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const res = await request(appWithStore(store, new ThrowingSnapshotBackend()))
+        .get("/api/v1/brands")
+        .set("Authorization", `Bearer ${secret}`);
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({
+        error: { code: "internal_error", message: "Internal gateway API error" }
+      });
+      expect(JSON.stringify(res.body)).not.toContain("backend snapshot exploded");
+      expect(JSON.stringify(res.body)).not.toContain("access_token");
+      expect(consoleError).toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("exposes the read-only metadata route surface with matching scopes", async () => {

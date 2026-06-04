@@ -4,7 +4,7 @@ import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayApiScope } from "../access/types.js";
 import { scopeAllowed } from "../access/types.js";
 import type { GatewayConnectionBackend, GatewayState } from "../admin/types.js";
-import { gatewayApiAuth } from "./auth.js";
+import { gatewayApiAuth, gatewayApiRequestPath } from "./auth.js";
 import { GatewayApiError, sendGatewayApiError } from "./errors.js";
 import { toGatewayApiResources } from "./resources.js";
 
@@ -36,10 +36,11 @@ function recordApiRead(
   }
 
   const requiredScope = req.gatewayApiRequiredScope;
+  const route = gatewayApiRequestPath(req);
   accessStore.recordUsage({
     clientId: authenticated.client.id,
     keyId: authenticated.key.id,
-    route: req.originalUrl,
+    route,
     method: req.method,
     statusCode,
     scope: requiredScope,
@@ -49,10 +50,10 @@ function recordApiRead(
     action: succeeded ? "api_read.succeeded" : "api_read.failed",
     targetType: "api_client",
     targetId: authenticated.client.id,
-    detail: `${succeeded ? "Read" : "Failed read"} ${req.method} ${req.originalUrl}`,
+    detail: `${succeeded ? "Read" : "Failed read"} ${req.method} ${route}`,
     actor: authenticated.client.id,
     metadata: {
-      route: req.originalUrl,
+      route,
       method: req.method,
       statusCode: String(statusCode),
       requiredScope: requiredScope ?? "",
@@ -78,7 +79,7 @@ function assertGatewayApiScope(req: Request, accessStore: GatewayAccessStore, re
     detail: `Missing required scope: ${requiredScope}`,
     actor: authenticated.client.id,
     metadata: {
-      route: req.originalUrl,
+      route: gatewayApiRequestPath(req),
       method: req.method,
       fingerprint: authenticated.key.fingerprint,
       requiredScope
@@ -228,6 +229,17 @@ export function createGatewayApiRouter({ backend, accessStore }: CreateGatewayAp
         throw notFound("Connection", req.params.connectionId);
       }
       return { connection };
+    })
+  );
+
+  router.use(
+    "*",
+    ...gatewayApiRead(accessStore, undefined, (req) => {
+      throw new GatewayApiError(
+        404,
+        "not_found",
+        `Gateway API route not found: ${req.method} ${gatewayApiRequestPath(req)}`
+      );
     })
   );
 

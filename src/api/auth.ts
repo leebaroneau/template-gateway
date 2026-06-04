@@ -16,8 +16,15 @@ function bearerSecret(req: Request): string | undefined {
   return match?.[1];
 }
 
+export function gatewayApiRequestPath(req: Request): string {
+  const queryIndex = req.originalUrl.indexOf("?");
+  const path = queryIndex === -1 ? req.originalUrl : req.originalUrl.slice(0, queryIndex);
+  return path.length > 0 ? path : "/";
+}
+
 export function gatewayApiAuth(accessStore: GatewayAccessStore, requiredScope?: GatewayApiScope) {
   return (req: Request, res: Response, next: NextFunction) => {
+    const route = gatewayApiRequestPath(req);
     try {
       const secret = bearerSecret(req);
       if (secret === undefined) {
@@ -27,7 +34,7 @@ export function gatewayApiAuth(accessStore: GatewayAccessStore, requiredScope?: 
           targetId: "unknown",
           detail: "Missing bearer token",
           actor: "anonymous",
-          metadata: { route: req.originalUrl, method: req.method, reason: "missing_bearer" }
+          metadata: { route, method: req.method, reason: "missing_bearer" }
         });
         throw new GatewayApiError(401, "unauthorized", "Missing bearer token");
       }
@@ -40,7 +47,7 @@ export function gatewayApiAuth(accessStore: GatewayAccessStore, requiredScope?: 
           targetId: "unknown",
           detail: "Invalid or revoked API key",
           actor: "anonymous",
-          metadata: { route: req.originalUrl, method: req.method, reason: "invalid_or_revoked" }
+          metadata: { route, method: req.method, reason: "invalid_or_revoked" }
         });
         throw new GatewayApiError(401, "unauthorized", "Invalid or revoked API key");
       }
@@ -51,10 +58,10 @@ export function gatewayApiAuth(accessStore: GatewayAccessStore, requiredScope?: 
         action: "api_auth.succeeded",
         targetType: "api_client",
         targetId: authenticated.client.id,
-        detail: `Authenticated ${req.method} ${req.originalUrl}`,
+        detail: `Authenticated ${req.method} ${route}`,
         actor: authenticated.client.id,
         metadata: {
-          route: req.originalUrl,
+          route,
           method: req.method,
           fingerprint: authenticated.key.fingerprint,
           requiredScope: requiredScope ?? ""

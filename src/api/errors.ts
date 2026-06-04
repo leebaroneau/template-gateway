@@ -20,6 +20,6 @@ export function sendGatewayApiError(res: Response, error: unknown): void {
     return;
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  res.status(500).json({ error: { code: "internal_error", message } });
+  console.error("Unhandled gateway API error", error);
+  res.status(500).json({ error: { code: "internal_error", message: "Internal gateway API error" } });
 }
