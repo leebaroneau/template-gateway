@@ -718,7 +718,7 @@ export class GatewayAccessStore {
       keys
     };
     const lastUsedAt = keys
-      .map((key) => this.keyLastUsedAt(key.id))
+      .map((key) => key.lastUsedAt)
       .filter((value): value is string => value !== undefined)
       .sort()
       .at(-1);
@@ -751,14 +751,10 @@ export class GatewayAccessStore {
     if (row.revoked_at !== null) {
       key.revokedAt = row.revoked_at;
     }
+    if (row.last_used_at !== null) {
+      key.lastUsedAt = row.last_used_at;
+    }
     return key;
-  }
-
-  private keyLastUsedAt(keyId: string): string | undefined {
-    const row = this.db
-      .prepare("SELECT last_used_at FROM gateway_api_keys WHERE id = ?")
-      .get(keyId) as { last_used_at: string | null } | undefined;
-    return row?.last_used_at ?? undefined;
   }
 
   private requestCount24h(clientId: string): number {

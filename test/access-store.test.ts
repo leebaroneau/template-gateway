@@ -99,6 +99,21 @@ describe("GatewayAccessStore", () => {
     ]);
   });
 
+  it("exposes key last-used metadata after authentication", () => {
+    const store = openStore();
+    const client = store.createClient(
+      { name: "Last Used Client", type: "service", owner: "ops@haverford.au", scopes: ["brands.read"] },
+      "local-admin"
+    );
+    const created = store.createKey(client.id, { label: "primary" }, "local-admin");
+
+    const authenticated = store.authenticate(created.secret);
+
+    expect(authenticated?.key.lastUsedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const listedKey = store.listApiClients()[0].keys[0];
+    expect(listedKey.lastUsedAt).toBe(authenticated?.key.lastUsedAt);
+  });
+
   it("rotates a key in place and invalidates the old secret immediately", () => {
     const store = openStore();
     const client = store.createClient(

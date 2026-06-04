@@ -85,6 +85,7 @@ export interface ApiKey {
   createdAt: string;
   rotatedAt?: string;
   revokedAt?: string;
+  lastUsedAt?: string;
 }
 
 export interface ApiClient {
