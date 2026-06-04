@@ -165,6 +165,30 @@ describe("GatewayAccessStore", () => {
     );
   });
 
+  it("rejects key rotation for revoked clients without creating a new secret path", () => {
+    const store = openStore();
+    const client = store.createClient(
+      { name: "Revoked Rotation Client", type: "service", owner: "ops@haverford.au", scopes: ["brands.read"] },
+      "local-admin"
+    );
+    const created = store.createKey(client.id, { label: "primary" }, "local-admin");
+
+    store.updateClient(client.id, { status: "revoked" }, "local-admin");
+
+    expectAccessStoreError(
+      () => store.rotateKey(client.id, created.key.id, "local-admin"),
+      409,
+      `API client is revoked: ${client.id}`
+    );
+    expect(store.authenticate(created.secret)).toBeUndefined();
+    expect(store.listApiClients()[0].keys[0]).toMatchObject({
+      id: created.key.id,
+      fingerprint: created.key.fingerprint,
+      preview: created.key.preview
+    });
+    expect(store.listApiClients()[0].keys[0].rotatedAt).toBeUndefined();
+  });
+
   it("records usage metrics and access audit events without raw secrets", () => {
     const store = openStore();
     const client = store.createClient(
@@ -379,6 +403,7 @@ describe("GatewayAccessStore", () => {
 describe("statusCodeForAdminError", () => {
   it("honors AdminBackendError and Error-like statusCode values", () => {
     expect(statusCodeForAdminError(new AdminBackendError(409, "conflict"))).toBe(409);
+    expect(statusCodeForAdminError(new AdminBackendError(302, "redirect"))).toBe(400);
     expect(statusCodeForAdminError(new AccessStoreError(404, "missing"))).toBe(404);
     expect(statusCodeForAdminError(Object.assign(new Error("gateway"), { statusCode: 502 }))).toBe(502);
     expect(statusCodeForAdminError(Object.assign(new Error("bad"), { statusCode: "409" }))).toBe(400);

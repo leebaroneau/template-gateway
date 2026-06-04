@@ -334,7 +334,9 @@ export class GatewayAccessStore {
     const rotate = this.db.transaction(() => {
       const client = this.readClientRow(clientId);
       validateApiClientType(client.type);
-      validateApiClientStatus(client.status);
+      if (validateApiClientStatus(client.status) === "revoked") {
+        throw new AccessStoreError(409, `API client is revoked: ${clientId}`);
+      }
       const existing = this.readKeyRow(clientId, keyId);
       if (validateApiKeyStatus(existing.status) === "revoked") {
         throw new AccessStoreError(409, `Cannot rotate revoked API key: ${keyId}`);
