@@ -1,11 +1,23 @@
 import express from "express";
 import type { Request, Response } from "express";
+import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.js";
 import { actorContext, bearerAuth } from "./auth.js";
 import { SessionCache } from "./session-cache.js";
 import { forwardJsonRpc, makeComposioSessionFactory } from "./mcp-proxy.js";
+import { buildAdminBackend } from "./admin/backend-factory.js";
+import { createAdminRouter } from "./admin/routes.js";
+import type { GatewayConnectionBackend } from "./admin/types.js";
+import { GatewayAccessStore } from "./access/store.js";
+import { createGatewayApiRouter } from "./api/routes.js";
+import { createGatewayMcpV1Router } from "./mcp-v1/routes.js";
 
-export function createApp(config = loadConfig()) {
+interface CreateAppOptions {
+  adminBackend?: GatewayConnectionBackend;
+  accessStore?: GatewayAccessStore;
+}
+
+export function createApp(config = loadConfig(), options: CreateAppOptions = {}) {
   const factory = makeComposioSessionFactory({
     composioApiKey: config.composioApiKey,
     composioProjectId: config.composioProjectId,
@@ -15,6 +27,8 @@ export function createApp(config = loadConfig()) {
   const cache = new SessionCache(factory, { ttlSeconds: config.sessionTtlSeconds });
   const app = express();
   app.disable("x-powered-by");
+  const adminBackend = options.adminBackend ?? buildAdminBackend(config);
+  const accessStore = options.accessStore ?? new GatewayAccessStore(config.gatewayStorePath);
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
@@ -24,6 +38,18 @@ export function createApp(config = loadConfig()) {
       toolkitAllowlist: config.toolkitAllowlist ?? "<all toolkits the API key can see>"
     });
   });
+
+  app.use("/admin", createAdminRouter(adminBackend, accessStore));
+  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore }));
+  app.use(
+    "/mcp/v1",
+    createGatewayMcpV1Router({
+      backend: adminBackend,
+      accessStore,
+      authGateAllowedDomains: config.mcpAuthGateAllowedDomains,
+      authGateAllowedUsers: config.mcpAuthGateAllowedUsers
+    })
+  );
 
   const mcpRouter = express.Router();
   mcpRouter.use(express.json({ limit: "1mb" }));
@@ -71,6 +97,10 @@ function main() {
   });
 }
 
-if (process.argv[1] && process.argv[1].endsWith("index.js")) {
+function isDirectEntry(argvEntry = process.argv[1], moduleUrl = import.meta.url): boolean {
+  return Boolean(argvEntry && pathToFileURL(argvEntry).href === moduleUrl);
+}
+
+if (isDirectEntry()) {
   main();
 }

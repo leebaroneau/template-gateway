@@ -44,6 +44,171 @@ npm run dev
 curl http://localhost:3000/health
 ```
 
+## Local admin UI prototype
+
+The Haverford Unified Gateway admin prototype supports four admin data modes.
+`fixture` is the default local, non-persistent prototype mode. It runs without a
+live Dev API, Composio session, OAuth provider, native connector, or app data
+volume:
+
+```bash
+COMPOSIO_API_KEY=ak_local_dummy \
+BRAND_SLUG=haverford \
+GATEWAY_BEARER=a_secret_thats_long_enough \
+ADMIN_DATA_SOURCE=fixture \
+PORT=3000 \
+npm run dev
+```
+
+Open `http://localhost:3000/admin`.
+
+Fixture mode proves the operator workflow: brands, regions, connections,
+backend options, API clients, mock key rotation/revocation, and audit.
+
+Use `fixture-overlay` for local persistence without a running Haverford Dev API:
+
+```bash
+COMPOSIO_API_KEY=ak_local_dummy \
+BRAND_SLUG=haverford \
+GATEWAY_BEARER=a_secret_thats_long_enough \
+ADMIN_DATA_SOURCE=fixture-overlay \
+GATEWAY_STORE_PATH=./data/gateway.sqlite \
+PORT=3000 \
+npm run dev
+```
+
+Dev API read-through mode reads configured admin data from Haverford Dev API and
+is read-only in this phase:
+
+```bash
+COMPOSIO_API_KEY=ak_local_dummy \
+BRAND_SLUG=haverford \
+GATEWAY_BEARER=a_secret_thats_long_enough \
+ADMIN_DATA_SOURCE=dev-api \
+HAVERFORD_DEV_API_BASE_URL=http://localhost:3001 \
+HAVERFORD_DEV_API_CLIENT_ID=<internal-client-id> \
+HAVERFORD_DEV_API_CLIENT_SECRET=<internal-client-secret> \
+PORT=3000 \
+npm run dev
+```
+
+`dev-api-overlay` is the transition path: Haverford Dev API supplies imported
+source records, while the gateway stores edits, new records, and source
+overrides in SQLite.
+
+For production deployments, mount a persistent app data volume at `/data`.
+Overlay modes default to `GATEWAY_STORE_PATH=/data/gateway.sqlite` when
+`NODE_ENV=production`; set the variable explicitly if a deployment uses another
+mounted path. Overlay modes store gateway-owned records and source overrides in
+SQLite; they do not wire real OAuth, Nango, Composio, or native connector
+execution yet. Coolify env vars should stay limited to bootstrap/runtime inputs
+such as app secrets, Auth-Gate URL, initial admin/bootstrap token, and global
+provider credentials where required.
+
+## Local `/api/v1` gateway API smoke
+
+Use `fixture-overlay` when testing API access locally. The SQLite file is the
+source of truth for gateway-owned API clients, API keys, usage, audit events,
+and gateway-owned/overridden admin records:
+
+```bash
+export COMPOSIO_API_KEY=ak_local_dummy
+export BRAND_SLUG=haverford
+export GATEWAY_BEARER=a_secret_thats_long_enough
+export ADMIN_DATA_SOURCE=fixture-overlay
+export GATEWAY_STORE_PATH="$(pwd)/.tmp/gateway-phase-2.sqlite"
+export PORT=3000
+npm run dev
+```
+
+Create an API client:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Local Smoke","type":"service","owner":"local","scopes":["brands.read","regions.read","connectors.read","connections.read"]}'
+```
+
+Create a key for the returned `client.id`. The `secret` is only returned in this
+response:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients/<client-id>/keys \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"local smoke"}'
+```
+
+Call the versioned gateway API with the returned `gw_live_...` secret:
+
+```bash
+curl -s http://localhost:3000/api/v1/brands \
+  -H "Authorization: Bearer <gw_live_secret>"
+```
+
+Restart `npm run dev` with the same `GATEWAY_STORE_PATH`, then call
+`/api/v1/brands` again with the same secret. Expected: the key still
+authenticates, `requestCount24h` increases in `/admin/api/state`, and audit
+events include API key creation plus successful API auth/read entries. Raw
+`gw_live_...` secrets should not appear in `/admin/api/state` or `/api/v1/me`.
+
+## Local `/mcp/v1` metadata smoke
+
+`/mcp/v1` is the gateway-owned read-only MCP metadata endpoint. It is separate
+from the existing `/mcp` Composio proxy.
+
+Start the gateway with fixture overlay and a persistent local store:
+
+```bash
+export COMPOSIO_API_KEY=ak_local_dummy
+export BRAND_SLUG=haverford
+export GATEWAY_BEARER=a_secret_thats_long_enough
+export ADMIN_DATA_SOURCE=fixture-overlay
+export GATEWAY_STORE_PATH="$(pwd)/.tmp/gateway-mcp-v1.sqlite"
+export PORT=3000
+npm run dev
+```
+
+Create an API client with the `mcp.read` scope:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Local MCP Smoke","type":"agent","owner":"mcp@haverford.au","scopes":["mcp.read"]}'
+```
+
+Create a key for the returned `client.id`:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients/<client-id>/keys \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"local mcp smoke"}'
+```
+
+List MCP tools with the returned `gw_live_...` secret:
+
+```bash
+curl -s http://localhost:3000/mcp/v1 \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer <gw_live_secret>" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Call connection metadata:
+
+```bash
+curl -s http://localhost:3000/mcp/v1 \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer <gw_live_secret>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"gateway_list_connections","arguments":{"brandId":"brand_haverford"}}}'
+```
+
+Restart `npm run dev` with the same `GATEWAY_STORE_PATH`, then repeat the
+`tools/call` request. Expected: the same key still authenticates, the response
+contains `structuredContent.connections`, and `/admin/api/state` shows persisted
+usage and audit entries for `mcp_auth.succeeded`, `mcp_tool.listed`, and
+`mcp_tool.called`. Raw `gw_live_...` secrets should not appear in MCP responses
+or audit metadata.
+
 To use the gateway from a Hermes profile, add this to the profile's overlay:
 
 ```yaml
@@ -59,10 +224,17 @@ mybrand:
 
 | Var | Required | Meaning |
 |---|---|---|
-| `COMPOSIO_API_KEY` | yes | Org-level Composio API key |
-| `BRAND_SLUG` | yes | e.g. `genvest`; default `user_id` when header missing |
+| `COMPOSIO_API_KEY` | yes | Org-level Composio API key for `/mcp`; admin fixture mode can use `ak_local_dummy` |
+| `BRAND_SLUG` | yes | Brand slug, e.g. `haverford` or `genvest`; default `user_id` when header missing |
 | `GATEWAY_BEARER` | yes | Shared secret for Hermes ↔ gateway auth (≥16 chars) |
 | `COMPOSIO_PROJECT_ID` | no | Constrain to a specific Composio project |
+| `ADMIN_DATA_SOURCE` | no | Admin backend mode: `fixture`, `fixture-overlay`, `dev-api`, or `dev-api-overlay`; defaults to `fixture` |
+| `GATEWAY_STORE_PATH` | overlay modes | SQLite path for overlay persistence; use `/data/gateway.sqlite` on a mounted deployment volume |
+| `HAVERFORD_DEV_API_BASE_URL` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Base URL for Haverford Dev API read-through mode |
+| `HAVERFORD_DEV_API_CLIENT_ID` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Internal client id sent to Haverford Dev API |
+| `HAVERFORD_DEV_API_CLIENT_SECRET` | only when `ADMIN_DATA_SOURCE=dev-api` or `dev-api-overlay` | Internal client secret sent to Haverford Dev API |
+| `MCP_AUTH_GATE_ALLOWED_DOMAINS` | no | Comma-separated domain allowlist for optional `/mcp/v1` Auth Gate identity access |
+| `MCP_AUTH_GATE_ALLOWED_USERS` | no | Comma-separated email allowlist for optional `/mcp/v1` Auth Gate identity access |
 | `TOOLKIT_ALLOWLIST` | no | Comma-separated, e.g. `outlook,one_drive,pipedrive` — defaults to all toolkits the API key sees |
 | `PORT` | no | Default `3000` |
 | `SESSION_TTL_SECONDS` | no | Tool Router session cache TTL; default `3600`, min `60` |

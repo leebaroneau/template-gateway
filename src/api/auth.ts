@@ -1,0 +1,76 @@
+import type { NextFunction, Request, Response } from "express";
+import type { GatewayAccessStore } from "../access/store.js";
+import type { AuthenticatedGatewayApiClient, GatewayApiScope } from "../access/types.js";
+import { GatewayApiError, sendGatewayApiError } from "./errors.js";
+
+declare module "express-serve-static-core" {
+  interface Request {
+    gatewayApiAuth?: AuthenticatedGatewayApiClient;
+    gatewayApiRequiredScope?: GatewayApiScope;
+  }
+}
+
+function bearerSecret(req: Request): string | undefined {
+  const header = req.get("Authorization") ?? "";
+  const match = header.match(/^Bearer\s+(\S+)$/i);
+  return match?.[1];
+}
+
+export function gatewayApiRequestPath(req: Request): string {
+  const queryIndex = req.originalUrl.indexOf("?");
+  const path = queryIndex === -1 ? req.originalUrl : req.originalUrl.slice(0, queryIndex);
+  return path.length > 0 ? path : "/";
+}
+
+export function gatewayApiAuth(accessStore: GatewayAccessStore, requiredScope?: GatewayApiScope) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const route = gatewayApiRequestPath(req);
+    try {
+      const secret = bearerSecret(req);
+      if (secret === undefined) {
+        accessStore.writeAccessAudit({
+          action: "api_auth.failed",
+          targetType: "api_client",
+          targetId: "unknown",
+          detail: "Missing bearer token",
+          actor: "anonymous",
+          metadata: { route, method: req.method, reason: "missing_bearer" }
+        });
+        throw new GatewayApiError(401, "unauthorized", "Missing bearer token");
+      }
+
+      const authenticated = accessStore.authenticate(secret);
+      if (authenticated === undefined) {
+        accessStore.writeAccessAudit({
+          action: "api_auth.failed",
+          targetType: "api_client",
+          targetId: "unknown",
+          detail: "Invalid or revoked API key",
+          actor: "anonymous",
+          metadata: { route, method: req.method, reason: "invalid_or_revoked" }
+        });
+        throw new GatewayApiError(401, "unauthorized", "Invalid or revoked API key");
+      }
+
+      req.gatewayApiAuth = authenticated;
+      req.gatewayApiRequiredScope = requiredScope;
+      accessStore.writeAccessAudit({
+        action: "api_auth.succeeded",
+        targetType: "api_client",
+        targetId: authenticated.client.id,
+        detail: `Authenticated ${req.method} ${route}`,
+        actor: authenticated.client.id,
+        metadata: {
+          route,
+          method: req.method,
+          fingerprint: authenticated.key.fingerprint,
+          requiredScope: requiredScope ?? ""
+        }
+      });
+
+      next();
+    } catch (error) {
+      sendGatewayApiError(res, error);
+    }
+  };
+}

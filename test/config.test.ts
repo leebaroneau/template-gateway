@@ -13,6 +13,14 @@ describe("loadConfig", () => {
     delete process.env.AUTH_CONFIGS;
     delete process.env.PORT;
     delete process.env.SESSION_TTL_SECONDS;
+    delete process.env.NODE_ENV;
+    delete process.env.ADMIN_DATA_SOURCE;
+    delete process.env.GATEWAY_STORE_PATH;
+    delete process.env.HAVERFORD_DEV_API_BASE_URL;
+    delete process.env.HAVERFORD_DEV_API_CLIENT_ID;
+    delete process.env.HAVERFORD_DEV_API_CLIENT_SECRET;
+    delete process.env.MCP_AUTH_GATE_ALLOWED_DOMAINS;
+    delete process.env.MCP_AUTH_GATE_ALLOWED_USERS;
   });
 
   afterEach(() => {
@@ -38,6 +46,118 @@ describe("loadConfig", () => {
     expect(cfg.port).toBe(3000);
     expect(cfg.sessionTtlSeconds).toBe(3600);
     expect(cfg.toolkitAllowlist).toBeUndefined();
+    expect(cfg.adminDataSource).toBe("fixture");
+    expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
+    expect(cfg.mcpAuthGateAllowedDomains).toBeUndefined();
+    expect(cfg.mcpAuthGateAllowedUsers).toBeUndefined();
+  });
+
+  it("leaves MCP Auth Gate allowlists disabled by default", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough"
+    });
+
+    expect(cfg.mcpAuthGateAllowedDomains).toBeUndefined();
+    expect(cfg.mcpAuthGateAllowedUsers).toBeUndefined();
+  });
+
+  it("parses MCP Auth Gate allowlists as lowercased arrays", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      MCP_AUTH_GATE_ALLOWED_DOMAINS: " Haverford.au, haverford.COM.AU ,, ",
+      MCP_AUTH_GATE_ALLOWED_USERS: " Lee@Haverford.au, Ops@Haverford.com.au "
+    });
+
+    expect(cfg.mcpAuthGateAllowedDomains).toEqual(["haverford.au", "haverford.com.au"]);
+    expect(cfg.mcpAuthGateAllowedUsers).toEqual(["lee@haverford.au", "ops@haverford.com.au"]);
+  });
+
+  it("parses Dev API admin data source settings", () => {
+    process.env.COMPOSIO_API_KEY = "ak_test";
+    process.env.BRAND_SLUG = "genvest";
+    process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
+    process.env.ADMIN_DATA_SOURCE = "dev-api";
+    process.env.HAVERFORD_DEV_API_BASE_URL = " https://dev-api.haverford.au ";
+    process.env.HAVERFORD_DEV_API_CLIENT_ID = " gateway-admin ";
+    process.env.HAVERFORD_DEV_API_CLIENT_SECRET = " secret ";
+
+    const cfg = loadConfig();
+
+    expect(cfg.adminDataSource).toBe("dev-api");
+    expect(cfg.haverfordDevApiBaseUrl).toBe("https://dev-api.haverford.au");
+    expect(cfg.haverfordDevApiClientId).toBe("gateway-admin");
+    expect(cfg.haverfordDevApiClientSecret).toBe("secret");
+  });
+
+  it("parses Dev API admin data source settings from a custom env object", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "genvest",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "dev-api",
+      HAVERFORD_DEV_API_BASE_URL: " https://dev-api.haverford.au ",
+      HAVERFORD_DEV_API_CLIENT_ID: " gateway-admin ",
+      HAVERFORD_DEV_API_CLIENT_SECRET: " secret "
+    });
+
+    expect(cfg.adminDataSource).toBe("dev-api");
+    expect(cfg.haverfordDevApiBaseUrl).toBe("https://dev-api.haverford.au");
+    expect(cfg.haverfordDevApiClientId).toBe("gateway-admin");
+    expect(cfg.haverfordDevApiClientSecret).toBe("secret");
+  });
+
+  it("parses overlay admin data source settings with a store path", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "dev-api-overlay",
+      GATEWAY_STORE_PATH: " ./data/test-gateway.sqlite ",
+      HAVERFORD_DEV_API_BASE_URL: "https://dev-api.haverford.au",
+      HAVERFORD_DEV_API_CLIENT_ID: "gateway-admin",
+      HAVERFORD_DEV_API_CLIENT_SECRET: "secret"
+    });
+
+    expect(cfg.adminDataSource).toBe("dev-api-overlay");
+    expect(cfg.gatewayStorePath).toBe("./data/test-gateway.sqlite");
+  });
+
+  it("uses a local gateway store path default for overlay modes", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "fixture-overlay"
+    });
+
+    expect(cfg.adminDataSource).toBe("fixture-overlay");
+    expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
+  });
+
+  it("uses the deployment data volume as the production overlay store default", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      ADMIN_DATA_SOURCE: "fixture-overlay",
+      NODE_ENV: "production"
+    });
+
+    expect(cfg.adminDataSource).toBe("fixture-overlay");
+    expect(cfg.gatewayStorePath).toBe("/data/gateway.sqlite");
+  });
+
+  it("rejects invalid admin data sources", () => {
+    process.env.COMPOSIO_API_KEY = "ak_test";
+    process.env.BRAND_SLUG = "genvest";
+    process.env.GATEWAY_BEARER = "a_secret_thats_long_enough";
+    process.env.ADMIN_DATA_SOURCE = "sqlite";
+
+    expect(() => loadConfig()).toThrow(/ADMIN_DATA_SOURCE/);
   });
 
   it("parses the toolkit allowlist as a normalised array", () => {
