@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import express from "express";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GatewayAccessStore } from "../src/access/store.js";
 import { AdminBackendError } from "../src/admin/backend-error.js";
 import { renderAdminClientScript } from "../src/admin/client-script.js";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
@@ -18,10 +22,36 @@ import type {
 } from "../src/admin/types.js";
 import type { GatewayConfig } from "../src/config.js";
 
-function buildAdminApp(backend: GatewayConnectionBackend = new FixtureGatewayBackend()) {
+let tempDir: string;
+let accessStores: GatewayAccessStore[];
+
+beforeEach(() => {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "admin-routes-access-"));
+  accessStores = [];
+});
+
+afterEach(() => {
+  while (accessStores.length > 0) {
+    accessStores.pop()?.close();
+  }
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+function openAccessStore(filename = "gateway.sqlite"): GatewayAccessStore {
+  const store = new GatewayAccessStore(path.join(tempDir, filename));
+  accessStores.push(store);
+  return store;
+}
+
+function closeAccessStore(store: GatewayAccessStore): void {
+  store.close();
+  accessStores = accessStores.filter((candidate) => candidate !== store);
+}
+
+function buildAdminApp(backend: GatewayConnectionBackend = new FixtureGatewayBackend(), accessStore?: GatewayAccessStore) {
   const app = express();
   app.disable("x-powered-by");
-  app.use("/admin", createAdminRouter(backend));
+  app.use("/admin", createAdminRouter(backend, accessStore));
   return { app, backend };
 }
 
@@ -330,6 +360,282 @@ describe("admin routes", () => {
     expect(res.body.brands.length).toBeGreaterThanOrEqual(3);
     expect(res.body.connectors.length).toBeGreaterThanOrEqual(8);
     expect(res.body.connections.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("creates API clients through the persistent access store and returns fresh admin state", async () => {
+    const store = openAccessStore();
+    const { app } = buildAdminApp(new FixtureGatewayBackend(), store);
+
+    const res = await request(app).post("/admin/api/api-clients").set("x-forwarded-email", "ops@haverford.au").send({
+      name: "Persistent Admin Client",
+      type: "service",
+      owner: "ops@haverford.au",
+      scopes: ["brands.read", "audit.read"]
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.client).toMatchObject({
+      id: expect.stringMatching(/^api_client_/),
+      name: "Persistent Admin Client",
+      type: "service",
+      status: "active",
+      owner: "ops@haverford.au",
+      scopes: ["audit.read", "brands.read"],
+      keys: []
+    });
+    expect(res.body.state.apiClients).toContainEqual(res.body.client);
+    expect(store.listApiClients()).toContainEqual(res.body.client);
+    expect(res.body.state.auditEvents).toContainEqual(
+      expect.objectContaining({
+        action: "api_client.created",
+        targetId: res.body.client.id,
+        actor: "ops@haverford.au"
+      })
+    );
+
+    closeAccessStore(store);
+    const reopened = openAccessStore();
+    expect(reopened.listApiClients()).toContainEqual(res.body.client);
+  });
+
+  it("updates API clients through the persistent access store and returns fresh admin state", async () => {
+    const store = openAccessStore();
+    const client = store.createClient(
+      {
+        name: "Mutable Admin Client",
+        type: "agent",
+        owner: "agents@haverford.au",
+        scopes: ["brands.read"]
+      },
+      "setup"
+    );
+    const { app } = buildAdminApp(new FixtureGatewayBackend(), store);
+
+    const res = await request(app).patch(`/admin/api/api-clients/${client.id}`).send({
+      name: "Updated Admin Client",
+      type: "worker",
+      owner: "workers@haverford.au",
+      scopes: ["connections.read", "api_clients.write"],
+      status: "revoked"
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.client).toMatchObject({
+      id: client.id,
+      name: "Updated Admin Client",
+      type: "worker",
+      owner: "workers@haverford.au",
+      scopes: ["api_clients.write", "connections.read"],
+      status: "revoked"
+    });
+    expect(res.body.state.apiClients).toContainEqual(res.body.client);
+    expect(store.listApiClients()[0]).toEqual(res.body.client);
+  });
+
+  it("creates API keys through the persistent access store and only returns the secret at top level", async () => {
+    const store = openAccessStore();
+    const client = store.createClient(
+      {
+        name: "Keyed Admin Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      },
+      "setup"
+    );
+    const { app } = buildAdminApp(new FixtureGatewayBackend(), store);
+
+    const res = await request(app)
+      .post(`/admin/api/api-clients/${client.id}/keys`)
+      .set("x-auth-gate-email", "key-admin@haverford.au")
+      .send({ label: "primary" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.secret).toMatch(/^gw_live_[A-Za-z0-9_-]+$/);
+    expect(res.body.key).toMatchObject({
+      id: expect.stringMatching(/^api_key_/),
+      label: "primary",
+      status: "active"
+    });
+    expect(res.body.key).not.toHaveProperty("secret");
+    expect(JSON.stringify(res.body.state)).not.toContain(res.body.secret);
+    expect(store.authenticate(res.body.secret)?.key.id).toBe(res.body.key.id);
+    expect(res.body.state.apiClients[0].keys).toContainEqual(res.body.key);
+    expect(res.body.state.auditEvents).toContainEqual(
+      expect.objectContaining({
+        action: "api_key.created",
+        targetId: res.body.key.id,
+        actor: "key-admin@haverford.au"
+      })
+    );
+  });
+
+  it("rotates API keys through the persistent access store and invalidates the old secret", async () => {
+    const store = openAccessStore();
+    const client = store.createClient(
+      {
+        name: "Rotating Admin Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      },
+      "setup"
+    );
+    const created = store.createKey(client.id, { label: "primary" }, "setup");
+    const { app } = buildAdminApp(new FixtureGatewayBackend(), store);
+
+    const res = await request(app)
+      .post(`/admin/api/api-clients/${client.id}/keys/${created.key.id}/rotate`)
+      .set("x-auth-gate-email", "rotator@haverford.au")
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.secret).toMatch(/^gw_live_[A-Za-z0-9_-]+$/);
+    expect(res.body.secret).not.toBe(created.secret);
+    expect(res.body.key).toMatchObject({ id: created.key.id, label: "primary", status: "active" });
+    expect(res.body.key.preview).not.toBe(created.key.preview);
+    expect(JSON.stringify(res.body.state)).not.toContain(created.secret);
+    expect(JSON.stringify(res.body.state)).not.toContain(res.body.secret);
+    expect(store.authenticate(created.secret)).toBeUndefined();
+    expect(store.authenticate(res.body.secret)?.key.id).toBe(created.key.id);
+    expect(res.body.state.auditEvents).toContainEqual(
+      expect.objectContaining({
+        action: "api_key.rotated",
+        targetId: created.key.id,
+        actor: "rotator@haverford.au"
+      })
+    );
+  });
+
+  it("revokes API keys through the persistent access store", async () => {
+    const store = openAccessStore();
+    const client = store.createClient(
+      {
+        name: "Revoking Admin Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      },
+      "setup"
+    );
+    const created = store.createKey(client.id, { label: "primary" }, "setup");
+    const { app } = buildAdminApp(new FixtureGatewayBackend(), store);
+
+    const res = await request(app)
+      .post(`/admin/api/api-clients/${client.id}/keys/${created.key.id}/revoke`)
+      .set("x-user-email", "revoker@haverford.au")
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.key).toMatchObject({ id: created.key.id, status: "revoked" });
+    expect(store.authenticate(created.secret)).toBeUndefined();
+    expect(res.body.state.apiClients[0].keys).toContainEqual(res.body.key);
+    expect(res.body.state.auditEvents).toContainEqual(
+      expect.objectContaining({
+        action: "api_key.revoked",
+        targetId: created.key.id,
+        actor: "revoker@haverford.au"
+      })
+    );
+  });
+
+  it("uses access store API clients and audit events in admin state when configured", async () => {
+    const backend = new FixtureGatewayBackend();
+    const store = openAccessStore();
+    const client = store.createClient(
+      {
+        name: "State Store Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      },
+      "setup"
+    );
+    backend.testConnection("connection_haverford_au_outlook");
+    const { app } = buildAdminApp(backend, store);
+
+    const res = await request(app).get("/admin/api/state");
+
+    expect(res.status).toBe(200);
+    expect(res.body.apiClients).toEqual([client]);
+    expect(res.body.apiClients.map((candidate: { id: string }) => candidate.id)).not.toContain("client-marketing-ops");
+    expect(res.body.auditEvents).toContainEqual(
+      expect.objectContaining({ action: "api_client.created", targetId: client.id })
+    );
+    expect(res.body.auditEvents).toContainEqual(
+      expect.objectContaining({ action: "connection.tested", targetId: "connection_haverford_au_outlook" })
+    );
+  });
+
+  it("returns 503 for access store management routes when no access store is configured", async () => {
+    const { app } = buildAdminApp();
+    const expected = { error: "Gateway access store is not configured" };
+
+    const createRes = await request(app).post("/admin/api/api-clients").send({
+      name: "No Store Client",
+      type: "service",
+      owner: "ops@haverford.au",
+      scopes: ["brands.read"]
+    });
+    const updateRes = await request(app).patch("/admin/api/api-clients/client_missing").send({
+      name: "No Store Client"
+    });
+    const keyRes = await request(app).post("/admin/api/api-clients/client_missing/keys").send({ label: "primary" });
+
+    for (const res of [createRes, updateRes, keyRes]) {
+      expect(res.status).toBe(503);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.body).toEqual(expected);
+    }
+  });
+
+  it("uses trusted admin headers as access store audit actor fallbacks", async () => {
+    const store = openAccessStore();
+    const { app } = buildAdminApp(new FixtureGatewayBackend(), store);
+
+    const authHeader = await request(app)
+      .post("/admin/api/api-clients")
+      .set("x-auth-gate-email", "auth-gate@haverford.au")
+      .set("x-forwarded-email", "forwarded@haverford.au")
+      .set("x-user-email", "user@haverford.au")
+      .send({
+        name: "Auth Header Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      });
+    const forwardedHeader = await request(app)
+      .post("/admin/api/api-clients")
+      .set("x-forwarded-email", "forwarded@haverford.au")
+      .send({
+        name: "Forwarded Header Client",
+        type: "service",
+        owner: "ops@haverford.au",
+        scopes: ["brands.read"]
+      });
+    const userHeader = await request(app).post("/admin/api/api-clients").set("x-user-email", "user@haverford.au").send({
+      name: "User Header Client",
+      type: "service",
+      owner: "ops@haverford.au",
+      scopes: ["brands.read"]
+    });
+    const localFallback = await request(app).post("/admin/api/api-clients").send({
+      name: "Local Fallback Client",
+      type: "service",
+      owner: "ops@haverford.au",
+      scopes: ["brands.read"]
+    });
+
+    expect(authHeader.status).toBe(201);
+    expect(forwardedHeader.status).toBe(201);
+    expect(userHeader.status).toBe(201);
+    expect(localFallback.status).toBe(201);
+
+    const eventsByTarget = new Map(store.listAuditEvents().map((event) => [event.targetId, event] as const));
+    expect(eventsByTarget.get(authHeader.body.client.id)?.actor).toBe("auth-gate@haverford.au");
+    expect(eventsByTarget.get(forwardedHeader.body.client.id)?.actor).toBe("forwarded@haverford.au");
+    expect(eventsByTarget.get(userHeader.body.client.id)?.actor).toBe("user@haverford.au");
+    expect(eventsByTarget.get(localFallback.body.client.id)?.actor).toBe("local-admin");
   });
 
   it("awaits async admin backends", async () => {

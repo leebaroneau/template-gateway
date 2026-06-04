@@ -38,7 +38,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     });
   });
 
-  app.use("/admin", createAdminRouter(adminBackend));
+  app.use("/admin", createAdminRouter(adminBackend, accessStore));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore }));
 
   const mcpRouter = express.Router();
