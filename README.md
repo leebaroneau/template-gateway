@@ -105,6 +105,52 @@ execution yet. Coolify env vars should stay limited to bootstrap/runtime inputs
 such as app secrets, Auth-Gate URL, initial admin/bootstrap token, and global
 provider credentials where required.
 
+## Local `/api/v1` gateway API smoke
+
+Use `fixture-overlay` when testing API access locally. The SQLite file is the
+source of truth for gateway-owned API clients, API keys, usage, audit events,
+and gateway-owned/overridden admin records:
+
+```bash
+export COMPOSIO_API_KEY=ak_local_dummy
+export BRAND_SLUG=haverford
+export GATEWAY_BEARER=a_secret_thats_long_enough
+export ADMIN_DATA_SOURCE=fixture-overlay
+export GATEWAY_STORE_PATH="$(pwd)/.tmp/gateway-phase-2.sqlite"
+export PORT=3000
+npm run dev
+```
+
+Create an API client:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Local Smoke","type":"service","owner":"local","scopes":["brands.read","regions.read","connectors.read","connections.read"]}'
+```
+
+Create a key for the returned `client.id`. The `secret` is only returned in this
+response:
+
+```bash
+curl -s http://localhost:3000/admin/api/api-clients/<client-id>/keys \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"local smoke"}'
+```
+
+Call the versioned gateway API with the returned `gw_live_...` secret:
+
+```bash
+curl -s http://localhost:3000/api/v1/brands \
+  -H "Authorization: Bearer <gw_live_secret>"
+```
+
+Restart `npm run dev` with the same `GATEWAY_STORE_PATH`, then call
+`/api/v1/brands` again with the same secret. Expected: the key still
+authenticates, `requestCount24h` increases in `/admin/api/state`, and audit
+events include API key creation plus successful API auth/read entries. Raw
+`gw_live_...` secrets should not appear in `/admin/api/state` or `/api/v1/me`.
+
 To use the gateway from a Hermes profile, add this to the profile's overlay:
 
 ```yaml
