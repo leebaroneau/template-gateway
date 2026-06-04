@@ -8,8 +8,14 @@ export class AdminBackendError extends Error {
   }
 }
 
+function hasStatusCode(error: unknown): error is { statusCode: number } {
+  return Boolean(
+    error && typeof error === "object" && typeof (error as { statusCode?: unknown }).statusCode === "number"
+  );
+}
+
 export function statusCodeForAdminError(error: unknown): number {
-  if (error instanceof AdminBackendError) {
+  if (error instanceof AdminBackendError || hasStatusCode(error)) {
     return error.statusCode;
   }
   return 400;
