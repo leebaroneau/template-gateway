@@ -37,7 +37,7 @@ export interface GatewayApiResources {
 
 const credentialRefKeys = ["credential_ref", "credentialRef", "credential_group"] as const;
 const unsafeCredentialRefPattern =
-  /bearer|token|secret|password|private_key|BEGIN|ya29|shpat_|xox|sk_|gw_live_|\{|\}/i;
+  /bearer|token|secret|password|private[\s_-]*key|BEGIN|-----END [A-Z0-9 -]+-----|ya29|shpat_|xox|sk_|gw_live_|\{|\}/i;
 const unsafeConfigKeyTokens = [
   "apikey",
   "accesstoken",

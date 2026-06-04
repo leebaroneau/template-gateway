@@ -236,6 +236,38 @@ describe("gateway API resources", () => {
     expect(JSON.stringify(resource)).not.toContain("GW_LIVE_DEF456");
   });
 
+  it("omits private key marker values under ordinary config summary keys", () => {
+    const state: GatewayState = {
+      ...baseState,
+      connections: [
+        {
+          id: "connection_private_key_marker",
+          brandId: "brand_haverford",
+          regionId: "region_au",
+          connectorId: "connector_shopify",
+          backendType: "native",
+          displayName: "Private Key Marker Shopify",
+          status: "connected",
+          configSummary: {
+            shop_domain: "-----END PRIVATE KEY-----",
+            account_id: "PRIVATE KEY",
+            storefront_label: "-----end rsa private key-----",
+            display_name: "Haverford AU Shopify"
+          }
+        }
+      ]
+    };
+
+    const resource = toConnectionApiResource(state, state.connections[0]);
+
+    expect(resource.configSummary).toEqual({
+      display_name: "Haverford AU Shopify"
+    });
+    expect(JSON.stringify(resource)).not.toContain("-----END PRIVATE KEY-----");
+    expect(JSON.stringify(resource)).not.toContain("PRIVATE KEY");
+    expect(JSON.stringify(resource)).not.toContain("-----end rsa private key-----");
+  });
+
   it("infers Dev API source for mapped snapshots that do not include entity metadata", () => {
     const response: DevApiBrandsResponse = {
       brands: [
