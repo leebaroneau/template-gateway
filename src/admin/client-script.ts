@@ -1261,7 +1261,7 @@ function adminClientApp() {
       render();
       return;
     }
-    const actionButton = target?.closest<HTMLElement>("button[data-action]");
+    const actionButton = target?.closest<HTMLElement>("[data-action]");
     if (actionButton) {
       void handleButton(actionButton).catch((error: unknown) => showError(error instanceof Error ? error.message : String(error)));
     }

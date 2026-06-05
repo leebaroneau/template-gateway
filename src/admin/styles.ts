@@ -260,6 +260,12 @@ tr.is-selected td {
   background: #f2f8fa;
 }
 
+div.record-row.is-selected {
+  background: #e8f4f7;
+  border-left: 3px solid #2a7090;
+  padding-left: 13px;
+}
+
 .dense-list {
   display: grid;
   gap: 8px;
