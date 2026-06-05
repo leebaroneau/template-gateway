@@ -20,21 +20,24 @@ const CAPABILITIES: Record<string, ConnectorCapability[]> = {
 };
 
 export class ComposioConnectorAdapter implements GatewayConnectorAdapter {
-  readonly info: ConnectorAdapterInfo;
+  private readonly _supportedConnectorSlugs: string[];
 
   constructor(private readonly config: ComposioAdapterConfig) {
-    const supportedConnectorSlugs = config.supportedSlugs ?? DEFAULT_SUPPORTED_SLUGS;
-    this.info = {
+    this._supportedConnectorSlugs = config.supportedSlugs ?? DEFAULT_SUPPORTED_SLUGS;
+  }
+
+  get info(): ConnectorAdapterInfo {
+    return {
       slug: "composio",
       name: "Composio",
       backendType: "composio",
       status: this.getStatus(),
-      supportedConnectorSlugs,
+      supportedConnectorSlugs: this._supportedConnectorSlugs,
     };
   }
 
   listCapabilities(connectorSlug: string): ConnectorCapability[] {
-    if (!this.info.supportedConnectorSlugs.includes(connectorSlug)) return [];
+    if (!this._supportedConnectorSlugs.includes(connectorSlug)) return [];
     return CAPABILITIES[connectorSlug] ?? [];
   }
 

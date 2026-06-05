@@ -40,11 +40,12 @@ describe("NangoConnectorAdapter", () => {
   });
 
   describe("supportedSlugs", () => {
-    it("uses default slugs (google-search-console, meta-ads) when not provided", () => {
+    it("uses default slugs (google-search-console, meta-ads, shopify) when not provided", () => {
       const adapter = new NangoConnectorAdapter({ secretKey: "key" });
       expect(adapter.info.supportedConnectorSlugs).toEqual([
         "google-search-console",
         "meta-ads",
+        "shopify",
       ]);
     });
 

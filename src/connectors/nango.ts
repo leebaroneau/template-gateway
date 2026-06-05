@@ -6,7 +6,7 @@ export interface NangoAdapterConfig {
   supportedSlugs?: string[];
 }
 
-const DEFAULT_SUPPORTED_SLUGS = ["google-search-console", "meta-ads"];
+const DEFAULT_SUPPORTED_SLUGS = ["google-search-console", "meta-ads", "shopify"];
 
 const CAPABILITIES: Record<string, ConnectorCapability[]> = {
   "google-search-console": [
@@ -18,24 +18,28 @@ const CAPABILITIES: Record<string, ConnectorCapability[]> = {
     { slug: "ad_sets.read", name: "Ad Sets Read", mode: "read" },
     { slug: "insights.read", name: "Insights Read", mode: "read" },
   ],
+  "shopify": [],
 };
 
 export class NangoConnectorAdapter implements GatewayConnectorAdapter {
-  readonly info: ConnectorAdapterInfo;
+  private readonly _supportedConnectorSlugs: string[];
 
   constructor(private readonly config: NangoAdapterConfig) {
-    const supportedConnectorSlugs = config.supportedSlugs ?? DEFAULT_SUPPORTED_SLUGS;
-    this.info = {
+    this._supportedConnectorSlugs = config.supportedSlugs ?? DEFAULT_SUPPORTED_SLUGS;
+  }
+
+  get info(): ConnectorAdapterInfo {
+    return {
       slug: "nango",
       name: "Nango",
       backendType: "nango",
       status: this.getStatus(),
-      supportedConnectorSlugs,
+      supportedConnectorSlugs: this._supportedConnectorSlugs,
     };
   }
 
   listCapabilities(connectorSlug: string): ConnectorCapability[] {
-    if (!this.info.supportedConnectorSlugs.includes(connectorSlug)) return [];
+    if (!this._supportedConnectorSlugs.includes(connectorSlug)) return [];
     return CAPABILITIES[connectorSlug] ?? [];
   }
 
