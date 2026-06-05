@@ -56,16 +56,17 @@ export function buildAdminBackend(config: GatewayConfig, accessStore?: GatewayAc
     // Connector catalog uses the merged (fixture + mapper) definitions, filtered by
     // per-deployment enable/disable settings stored in gateway_connector_settings.
     const allConnectors = mapDevApiBrandsToGatewayState({ brands: [] }).connectors;
-    const connectors = accessStore
-      ? allConnectors.filter((c) => accessStore.isConnectorEnabled(c.id))
-      : allConnectors;
     const emptyCatalogBackend: GatewayConnectionBackend = {
       ...new FixtureGatewayBackend(),
+      // Re-evaluate the enabled filter on EVERY snapshot so runtime toggles
+      // (enable/disable a connector) take effect without a restart.
       snapshot: async (): Promise<GatewayState> => ({
         brands: [],
         regions: [],
         connections: [],
-        connectors,
+        connectors: accessStore
+          ? allConnectors.filter((c) => accessStore.isConnectorEnabled(c.id))
+          : allConnectors,
         apiClients: [],
         auditEvents: [],
         entityMeta: [],
