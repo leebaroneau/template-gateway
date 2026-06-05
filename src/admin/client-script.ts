@@ -536,14 +536,16 @@ function adminClientApp() {
     }
     return regions
       .map(
-        (region) => `<div class="record-row">
-          <div>
-            <strong>${h(region.name)}</strong>
-            <div class="small muted">${h(region.code)}${region.domain ? ` - ${h(region.domain)}` : ""}</div>
-            ${sourceBadge("region", region.id)}
-          </div>
-          ${statusBadge(region.status)}
-        </div>`
+        (region) => {
+          const isSelected = region.id === uiState.selectedRegionId;
+          return `<div class="record-row ${isSelected ? "is-selected" : ""}" style="cursor:pointer" data-action="select-region" data-region-id="${h(region.id)}">
+            <div>
+              <strong>${h(region.name)}</strong>
+              <div class="small muted">${h(region.code)}${region.domain ? ` · ${h(region.domain)}` : ""}</div>
+            </div>
+            ${statusBadge(region.status)}
+          </div>`;
+        }
       )
       .join("");
   }
@@ -603,78 +605,106 @@ function adminClientApp() {
   }
 
   function renderBrands(): string {
+    const allBrands = collection("brands");
+    const allRegions = collection("regions");
     const selectedBrand = byId("brands", uiState.selectedBrandId);
     const regions = brandRegions(uiState.selectedBrandId);
     const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
     const selectedConnection = selectedConnectionForRegion(connections);
-    return `${viewHeader("Brands", `${collection("brands").length} brands across ${collection("regions").length} regions. Click a brand to select it.`)}
-      <div class="grid-wide">
-        <section class="panel">
-          <div class="panel-header"><div><h3>Brands</h3><p>${collection("brands").length} configured.</p></div></div>
-          <div class="dense-list">${renderBrandList()}</div>
-        </section>
-        <div class="workspace">
-          ${renderBrandEditor(selectedBrand)}
-          <section class="panel">
-            <div class="form-grid">
-              <form data-action="create-brand" class="form-grid span-2">
-                <label>
-                  Brand name
-                  <input name="name" required placeholder="New brand">
-                </label>
-                <label>
-                  Slug
-                  <input name="slug" placeholder="new-brand">
-                </label>
-                <div class="button-row span-2">
-                  <button class="btn btn-primary" type="submit">Add brand</button>
-                </div>
-              </form>
+
+    // Level 3 — Connections section (only when a region is selected)
+    const connectionsSection = selectedRegion ? `
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h3>Connections</h3>
+            <p>${h(selectedBrand?.name ?? "")} · ${h(selectedRegion.name)} (${h(selectedRegion.code)})</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Connector</th><th>Backend</th><th>Status</th><th></th></tr></thead>
+            <tbody>${connectionRows(connections)}</tbody>
+          </table>
+        </div>
+        ${selectedConnection ? `<div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>` : ""}
+        ${renderConnectorSetup()}
+      </section>` : "";
+
+    // Region list: each row is clickable; selected row shows inline edit form below it
+    const regionListWithInlineEditor = regions.length === 0
+      ? `<div class="empty-panel">No regions for this brand.</div>`
+      : regions.map((region) => {
+          const isSelected = region.id === uiState.selectedRegionId;
+          return `<div class="record-row ${isSelected ? "is-selected" : ""}" style="cursor:pointer" data-action="select-region" data-region-id="${h(region.id)}">
+            <div>
+              <strong>${h(region.name)}</strong>
+              <div class="small muted">${h(region.code)}${region.domain ? ` · ${h(region.domain)}` : ""}</div>
             </div>
-          </section>
-          <section class="panel">
-            <div class="panel-header">
-              <div><h3>Regions</h3><p>${selectedBrand ? h(selectedBrand.name) : "No brand selected"}</p></div>
-              <select data-control="brand" aria-label="Selected brand">${optionsFor(collection("brands"), uiState.selectedBrandId)}</select>
+            ${statusBadge(region.status)}
+          </div>
+          ${isSelected ? `<div class="edit-block" style="padding:12px 16px;background:var(--bg-subtle,#f9fafb);border-bottom:1px solid var(--border)">${renderRegionEditor(region)}</div>` : ""}`;
+        }).join("");
+
+    // Level 2 — Regions section (only when a brand is selected)
+    const regionsSection = selectedBrand ? `
+      <section class="panel">
+        <div class="panel-header">
+          <div><h3>Regions</h3><p>${h(selectedBrand.name)} · ${regions.length} region${regions.length === 1 ? "" : "s"}</p></div>
+        </div>
+        <div class="dense-list">${regionListWithInlineEditor}</div>
+        <details style="padding:0;border-top:1px solid var(--border)">
+          <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none;user-select:none">＋ Add region</summary>
+          <form data-action="create-region" class="form-grid" style="padding:0 16px 16px">
+            <label>Code<input name="code" required placeholder="AU"></label>
+            <label>Name<input name="name" required placeholder="Australia"></label>
+            <label class="span-2">Domain<input name="domain" placeholder="brand.example"></label>
+            <div class="button-row span-2">
+              <button class="btn btn-primary" type="submit">Add region</button>
             </div>
-            ${renderRegionEditor(selectedRegion)}
-            <div class="dense-list">${renderRegionList(regions)}</div>
-            <form data-action="create-region" class="form-grid">
-              <label>
-                Code
-                <input name="code" required placeholder="AU">
-              </label>
-              <label>
-                Name
-                <input name="name" required placeholder="Australia">
-              </label>
-              <label class="span-2">
-                Domain
-                <input name="domain" placeholder="brand.example">
-              </label>
+          </form>
+        </details>
+      </section>
+      ${connectionsSection}` : "";
+
+    // Level 1 — Brand detail (only when a brand is selected)
+    const brandDetail = selectedBrand
+      ? `<section class="panel">
+          <div class="panel-header">
+            <div><h3>${h(selectedBrand.name)}</h3><p>${h(selectedBrand.slug)}</p></div>
+            ${statusBadge(selectedBrand.status)}
+          </div>
+          <details style="padding:0;border-top:1px solid var(--border)">
+            <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none;user-select:none">Edit brand</summary>
+            <form data-action="update-brand" data-brand-id="${h(selectedBrand.id)}" class="form-grid" style="padding:0 16px 16px">
+              <label>Name<input name="name" required value="${h(selectedBrand.name)}"></label>
+              <label>Status<select name="status">${valueOptions(["active", "disabled"], selectedBrand.status)}</select></label>
               <div class="button-row span-2">
-                <button class="btn btn-primary" type="submit" ${selectedBrand ? "" : "disabled"}>Add region</button>
+                <button class="btn btn-primary" type="submit">Save brand</button>
+                ${resetButton("brand", selectedBrand.id)}
               </div>
             </form>
-          </section>
-          <section class="panel">
-            <div class="panel-header">
-              <div><h3>Regional connections</h3><p>${selectedRegion ? h(selectedRegion.name) : "No region selected"}</p></div>
-              <div class="select-pair">
-                <select data-control="region" aria-label="Selected region">${optionsFor(regions, uiState.selectedRegionId, "code")}</select>
-                <select data-control="connection" aria-label="Selected connection">${optionsFor(connections, uiState.selectedConnectionId, "displayName")}</select>
-              </div>
+          </details>
+        </section>
+        ${regionsSection}`
+      : `<section class="panel"><div class="empty-panel muted">Select a brand from the list to manage its regions and connections.</div></section>`;
+
+    return `${viewHeader("Brands", `${allBrands.length} brands across ${allRegions.length} regions.`)}
+      <div class="grid-wide">
+        <section class="panel">
+          <div class="panel-header"><div><h3>Brands</h3><p>${allBrands.length} configured.</p></div></div>
+          <div class="dense-list">${renderBrandList()}</div>
+          <form data-action="create-brand" class="form-grid" style="padding:12px 16px;border-top:1px solid var(--border)">
+            <label>Name<input name="name" required placeholder="New brand"></label>
+            <label>Slug<input name="slug" placeholder="new-brand"></label>
+            <div class="button-row span-2">
+              <button class="btn btn-primary" type="submit">Add brand</button>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Source</th><th>Action</th></tr></thead>
-                <tbody>${connectionRows(connections)}</tbody>
-              </table>
-            </div>
-            <div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>
-          </section>
-          ${renderConnectorSetup()}
+          </form>
+        </section>
+        <div class="workspace">
+          ${brandDetail}
         </div>
       </div>`;
   }
@@ -1125,6 +1155,13 @@ function adminClientApp() {
     const action = button.dataset.action;
     if (action === "select-brand" && button.dataset.brandId) {
       selectBrand(button.dataset.brandId);
+      render();
+      return;
+    }
+    if (action === "select-region" && button.dataset.regionId) {
+      uiState.selectedRegionId = button.dataset.regionId;
+      uiState.selectedConnectionId = null;
+      selectedConnectionForRegion(regionConnections(button.dataset.regionId));
       render();
       return;
     }
