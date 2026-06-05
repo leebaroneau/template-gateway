@@ -1,9 +1,10 @@
 import { DevApiGatewayBackend } from "./dev-api-backend.js";
 import { DevApiBrandsClient } from "./dev-api-client.js";
+import { mapDevApiBrandsToGatewayState } from "./dev-api-mapper.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
 import { OverlayGatewayBackend } from "./overlay-backend.js";
 import { GatewayOverlayStore } from "./overlay-store.js";
-import type { GatewayConnectionBackend } from "./types.js";
+import type { GatewayConnectionBackend, GatewayState } from "./types.js";
 import type { GatewayConfig } from "../config.js";
 
 function requireSetting(value: string | undefined, name: string, dataSource: GatewayConfig["adminDataSource"]): string {
@@ -46,6 +47,33 @@ export function buildAdminBackend(config: GatewayConfig): GatewayConnectionBacke
       store: new GatewayOverlayStore(config.gatewayStorePath),
       sourceLabel: "Fixture backend",
       sourceType: "fixture"
+    });
+  }
+
+  if (config.adminDataSource === "gateway-store") {
+    // Serves data exclusively from the gateway SQLite overlay store.
+    // Brands, regions, and connections come from the seeded/managed overlay tables.
+    // Connector catalog uses the merged (fixture + mapper) definitions so all
+    // backendType values used in seeded connections are valid.
+    const connectors = mapDevApiBrandsToGatewayState({ brands: [] }).connectors;
+    const emptyCatalogBackend: GatewayConnectionBackend = {
+      ...new FixtureGatewayBackend(),
+      snapshot: async (): Promise<GatewayState> => ({
+        brands: [],
+        regions: [],
+        connections: [],
+        connectors,
+        apiClients: [],
+        auditEvents: [],
+        entityMeta: [],
+      }),
+    } as GatewayConnectionBackend;
+
+    return new OverlayGatewayBackend({
+      source: emptyCatalogBackend,
+      store: new GatewayOverlayStore(config.gatewayStorePath),
+      sourceLabel: "Gateway store",
+      sourceType: "gateway",
     });
   }
 

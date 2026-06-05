@@ -15,6 +15,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed-from-dev-api": "node scripts/seed-from-dev-api.mjs",
     "list-tools": "node scripts/composio-list-tools.mjs",
     "create-servers": "node scripts/composio-create-servers.mjs"
   },
