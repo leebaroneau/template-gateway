@@ -307,12 +307,12 @@ describe("OverlayGatewayBackend", () => {
       backend.createConnection({
         brandId: "brand_haverford",
         regionId: "region_haverford_au",
-        connectorId: "connector_haverford_dev_api",
-        backendType: "nango",
-        displayName: "Unsupported Dev API"
+        connectorId: "connector_klaviyo",
+        backendType: "composio",
+        displayName: "Unsupported Klaviyo"
       }),
       400,
-      /does not support backend nango/
+      /does not support backend composio/
     );
     await expectAdminError(
       backend.updateConnection("conn-hav-nz-gsc", { backendType: "composio" }),

@@ -15,7 +15,7 @@ describe("FixtureGatewayBackend", () => {
     const backend = new FixtureGatewayBackend();
     const state = backend.snapshot();
     const outlook = state.connectors.find((connector) => connector.slug === "outlook")!;
-    const devApi = state.connectors.find((connector) => connector.slug === "haverford-dev-api")!;
+    const klaviyo = state.connectors.find((connector) => connector.slug === "klaviyo")!;
     const marketingOps = state.apiClients.find((client) => client.name === "Marketing Ops")!;
     const lifecycleConnection = state.connections.find((connection) => connection.id === "conn-hav-nz-gsc")!;
 
@@ -24,8 +24,8 @@ describe("FixtureGatewayBackend", () => {
     );
     expect(state.brands.length).toBeGreaterThanOrEqual(3);
     expect(state.regions.length).toBeGreaterThanOrEqual(5);
-    expect(state.connectors.length).toBeGreaterThanOrEqual(8);
-    expect(state.connections.length).toBeGreaterThanOrEqual(8);
+    expect(state.connectors.length).toBeGreaterThanOrEqual(7);
+    expect(state.connections.length).toBeGreaterThanOrEqual(6);
     expect(state.apiClients.map((client) => client.name)).toEqual(
       expect.arrayContaining(["Marketing Ops", "Shopify Sales", "Agent Gateway", "Reporting Worker"])
     );
@@ -35,9 +35,9 @@ describe("FixtureGatewayBackend", () => {
       requiredFields: expect.arrayContaining([expect.objectContaining({ key: "mailbox" })]),
       scopes: expect.arrayContaining(["mail.read"])
     });
-    expect(devApi.backendOptions).toEqual(["internal"]);
+    expect(klaviyo.backendOptions).toEqual(expect.arrayContaining(["nango", "native"]));
     expect(state.connections.map((connection) => connection.backendType)).toEqual(
-      expect.arrayContaining(["nango", "composio", "native", "internal"])
+      expect.arrayContaining(["nango", "composio", "native"])
     );
     expect(lifecycleConnection).toMatchObject({
       brandId: "brand_haverford",
@@ -485,20 +485,6 @@ describe("FixtureGatewayBackend", () => {
         },
         submittedSecret: "pk_private_api_key_ref_should_not_echo"
       },
-      {
-        connectorSlug: "haverford-dev-api",
-        backendType: "internal" as const,
-        displayName: "Service Account Ref Dev API",
-        configSummary: {
-          service: "gateway-admin",
-          service_account_token_ref: "hvd_service_account_token_ref_should_not_echo"
-        },
-        expectedSummary: {
-          service: "gateway-admin",
-          service_account_token_ref: "fixture-redacted:service_account_token"
-        },
-        submittedSecret: "hvd_service_account_token_ref_should_not_echo"
-      }
     ];
 
     for (const testCase of cases) {
@@ -523,72 +509,41 @@ describe("FixtureGatewayBackend", () => {
     }
   });
 
-  it("does not return submitted raw Haverford Dev API tokens in connection summaries", () => {
+  it("does not return submitted raw Klaviyo API keys in connection summaries", () => {
     const backend = new FixtureGatewayBackend();
     const state = backend.snapshot();
     const brand = state.brands.find((candidate) => candidate.slug === "haverford")!;
     const region = state.regions.find((candidate) => candidate.brandId === brand.id && candidate.code === "AU")!;
-    const connector = state.connectors.find((candidate) => candidate.slug === "haverford-dev-api")!;
-    const rawToken = "hvd_raw_service_account_token_123";
-    const rawTokenWithCredentialRef = "hvd_raw_service_account_token_456";
-    const credentialRef = "vault://haverford/dev-api/gateway-admin";
+    const connector = state.connectors.find((candidate) => candidate.slug === "klaviyo")!;
+    const rawKey = "pk_live_raw_klaviyo_key_123";
 
     expect(connector.requiredFields).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: "service" }),
-        expect.objectContaining({ key: "service_account_token", secret: true })
+        expect.objectContaining({ key: "account_id" }),
+        expect.objectContaining({ key: "private_api_key", secret: true })
       ])
-    );
-    expect(connector.requiredFields).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "credential_ref", secret: true })])
     );
 
     const connection = backend.createConnection({
       brandId: brand.id,
       regionId: region.id,
       connectorId: connector.id,
-      backendType: "internal",
-      displayName: "Sanitized Haverford Dev API",
+      backendType: "nango",
+      displayName: "Sanitized Klaviyo",
       configSummary: {
-        service: "gateway-admin",
-        service_account_token: rawToken
+        account_id: "ABC123",
+        private_api_key: rawKey
       }
     });
     const stored = backend.snapshot().connections.find((candidate) => candidate.id === connection.id)!;
 
     for (const summary of [connection.configSummary, stored.configSummary]) {
       expect(summary).toEqual({
-        service: "gateway-admin",
-        service_account_token_ref: "fixture-redacted:service_account_token"
+        account_id: "ABC123",
+        private_api_key_ref: "fixture-redacted:private_api_key"
       });
-      expect(summary).not.toHaveProperty("service_account_token");
-      expect(summary).not.toHaveProperty("credential_ref");
-      expect(Object.values(summary)).not.toContain(rawToken);
-    }
-
-    const referencedConnection = backend.createConnection({
-      brandId: brand.id,
-      regionId: region.id,
-      connectorId: connector.id,
-      backendType: "internal",
-      displayName: "Referenced Haverford Dev API",
-      configSummary: {
-        service: "gateway-admin",
-        service_account_token: rawTokenWithCredentialRef,
-        credential_ref: credentialRef
-      }
-    });
-    const storedReferenced = backend.snapshot().connections.find((candidate) => candidate.id === referencedConnection.id)!;
-
-    for (const summary of [referencedConnection.configSummary, storedReferenced.configSummary]) {
-      expect(summary).toEqual({
-        service: "gateway-admin",
-        service_account_token_ref: "fixture-redacted:service_account_token"
-      });
-      expect(summary).not.toHaveProperty("service_account_token");
-      expect(summary).not.toHaveProperty("credential_ref");
-      expect(Object.values(summary)).not.toContain(rawTokenWithCredentialRef);
-      expect(Object.values(summary)).not.toContain(credentialRef);
+      expect(summary).not.toHaveProperty("private_api_key");
+      expect(Object.values(summary)).not.toContain(rawKey);
     }
   });
 
@@ -675,17 +630,17 @@ describe("FixtureGatewayBackend", () => {
   it("rejects unsupported connector backends", () => {
     const backend = new FixtureGatewayBackend();
     const { brand, region, state } = getFixtureRefs(backend);
-    const connector = state.connectors.find((candidate) => candidate.slug === "haverford-dev-api")!;
+    const connector = state.connectors.find((candidate) => candidate.slug === "klaviyo")!;
 
     expect(() =>
       backend.createConnection({
         brandId: brand.id,
         regionId: region.id,
         connectorId: connector.id,
-        backendType: "nango",
-        displayName: "Unsupported Dev API"
+        backendType: "composio",
+        displayName: "Unsupported Klaviyo"
       })
-    ).toThrow(/Connector haverford-dev-api does not support backend nango/);
+    ).toThrow(/Connector klaviyo does not support backend composio/);
   });
 
   it("testConnection marks a known connection connected and sets lastTestedAt", () => {

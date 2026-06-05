@@ -19,6 +19,7 @@ function adminClientApp() {
     selectedConnectionId: string | null;
     secretReveal: SecretReveal | null;
     appInstalls?: Item[];
+    allConnectors?: Item[];
   };
 
   const root = document.getElementById("app-root") as HTMLElement | null;
@@ -710,27 +711,41 @@ function adminClientApp() {
   }
 
   function renderConnectors(): string {
-    const rows = collection("connectors")
+    const allConnectors = (uiState.allConnectors ?? collection("connectors").map((c) => ({ ...c, enabled: true }))) as Item[];
+    const enabledCount = allConnectors.filter((c) => c.enabled !== false).length;
+    const rows = allConnectors
       .map(
-        (connector) => `<tr>
-          <td><strong>${h(connector.name)}</strong><div class="small muted">${h(connector.slug)}</div></td>
-          <td>${h(connector.category)}</td>
-          <td>${statusBadge(connector.authMode)}</td>
-          <td>${chips((connector.backendOptions ?? []) as unknown[])}</td>
-          <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
-        </tr>`
+        (connector) => {
+          const enabled = connector.enabled !== false;
+          return `<tr style="${enabled ? "" : "opacity:.5"}">
+            <td><strong>${h(connector.name)}</strong><div class="small muted">${h(connector.slug)}</div></td>
+            <td>${h(connector.category)}</td>
+            <td>${statusBadge(connector.authMode)}</td>
+            <td>${chips((connector.backendOptions ?? []) as unknown[])}</td>
+            <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
+            <td><button class="btn btn-sm" type="button" data-action="toggle-connector" data-connector-id="${h(connector.id)}" data-enabled="${enabled ? "1" : "0"}">${enabled ? "Disable" : "Enable"}</button></td>
+          </tr>`;
+        }
       )
       .join("");
-    const connectors = collection("connectors");
-    return `${viewHeader("Connectors", `${connectors.length} connector definitions available to gateway connections.`)}
+    return `${viewHeader("Connectors", `${enabledCount} of ${allConnectors.length} connectors enabled for this deployment.`)}
       <section class="panel">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th></tr></thead>
+            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
       </section>`;
+  }
+
+  async function refreshConnectorsState(): Promise<void> {
+    try {
+      const result = await requestJson("/admin/api/connectors/all");
+      (uiState as Record<string, unknown>).allConnectors = result.connectors;
+    } catch {
+      // falls back to state.connectors (enabled only) if endpoint unavailable
+    }
   }
 
   function apiAccessAuditEvents(): Item[] {
@@ -1235,6 +1250,15 @@ function adminClientApp() {
       await refreshAppsState();
       return;
     }
+    if (action === "toggle-connector" && button.dataset.connectorId) {
+      const enabling = button.dataset.enabled === "0";
+      await postJson(`/admin/api/connectors/${encodeURIComponent(button.dataset.connectorId)}/toggle`, { enabled: enabling });
+      const state = await requestJson("/admin/api/state");
+      applyState(state);
+      await refreshConnectorsState();
+      render();
+      return;
+    }
     if (action === "provision-apps") {
       await postJson("/api/v1/app-installs/provision", {});
       await refreshAppsState();
@@ -1257,6 +1281,9 @@ function adminClientApp() {
       uiState.view = viewButton.dataset.view;
       if (viewButton.dataset.view === "apps") {
         void refreshAppsState().catch((error: unknown) => showError(error instanceof Error ? error.message : String(error)));
+      }
+      if (viewButton.dataset.view === "connectors") {
+        void refreshConnectorsState().catch(() => { /* falls back to state.connectors */ });
       }
       render();
       return;

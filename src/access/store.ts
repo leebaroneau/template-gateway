@@ -627,10 +627,35 @@ export class GatewayAccessStore {
         WHERE status = 'active';
       CREATE INDEX IF NOT EXISTS gateway_api_usage_client_occurred_idx
         ON gateway_api_usage(client_id, occurred_at);
+      CREATE TABLE IF NOT EXISTS gateway_connector_settings (
+        connector_id TEXT PRIMARY KEY NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
     `);
     this.db
       .prepare("INSERT OR IGNORE INTO gateway_schema_migrations (id, applied_at) VALUES (@id, @appliedAt)")
       .run({ id: "002_gateway_access_store", appliedAt: timestamp() });
+  }
+
+  isConnectorEnabled(connectorId: string): boolean {
+    const row = this.db
+      .prepare("SELECT enabled FROM gateway_connector_settings WHERE connector_id = ?")
+      .get(connectorId) as { enabled: number } | undefined;
+    return row === undefined ? true : row.enabled === 1; // absent = enabled by default
+  }
+
+  setConnectorEnabled(connectorId: string, enabled: boolean): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO gateway_connector_settings (connector_id, enabled, updated_at) VALUES (@connectorId, @enabled, @updatedAt)")
+      .run({ connectorId, enabled: enabled ? 1 : 0, updatedAt: timestamp() });
+  }
+
+  listDisabledConnectors(): string[] {
+    const rows = this.db
+      .prepare("SELECT connector_id FROM gateway_connector_settings WHERE enabled = 0")
+      .all() as { connector_id: string }[];
+    return rows.map((r) => r.connector_id);
   }
 
   private insertAudit(input: AccessAuditInput): AuditEvent {

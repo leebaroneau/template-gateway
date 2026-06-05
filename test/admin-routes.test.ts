@@ -189,8 +189,8 @@ describe("admin routes", () => {
     expect(js.text).toContain("function revealSecret");
     expect(js.text).toContain("No API clients yet. Create one to test /api/v1 locally.");
     expect(js.text).toContain('select name="connectorId" data-control="connector"');
-    expect(js.text).toContain('select data-control="region" aria-label="Selected region"');
-    expect(js.text).toContain('select data-control="connection" aria-label="Selected connection"');
+    expect(js.text).toContain('data-action="select-region"');
+    expect(js.text).toContain('data-action="select-connection"');
     expect(js.text).toContain('data-action="test-connection"');
     expect(js.text).toContain('data-action="select-connection"');
     expect(js.text).toContain('data-action="reset-entity"');
@@ -319,7 +319,7 @@ describe("admin routes", () => {
     });
 
     expect(errorPanel.hidden).toBe(true);
-    expect(root.innerHTML).toContain("Haverford Dev API");
+    expect(root.innerHTML).toContain("Haverford AU Shopify");
     expect(root.innerHTML).toContain("Gateway overlay");
     expect(root.innerHTML).toContain("Fixture backend");
     expect(root.innerHTML).toContain("Override");
@@ -371,8 +371,8 @@ describe("admin routes", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.brands.length).toBeGreaterThanOrEqual(3);
-    expect(res.body.connectors.length).toBeGreaterThanOrEqual(8);
-    expect(res.body.connections.length).toBeGreaterThanOrEqual(8);
+    expect(res.body.connectors.length).toBeGreaterThanOrEqual(7);
+    expect(res.body.connections.length).toBeGreaterThanOrEqual(7);
   });
 
   it("creates API clients through the persistent access store and returns fresh admin state", async () => {

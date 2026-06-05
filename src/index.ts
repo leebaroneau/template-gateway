@@ -39,8 +39,8 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   const cache = factory ? new SessionCache(factory, { ttlSeconds: config.sessionTtlSeconds }) : undefined;
   const app = express();
   app.disable("x-powered-by");
-  const adminBackend = options.adminBackend ?? buildAdminBackend(config);
   const accessStore = options.accessStore ?? new GatewayAccessStore(config.gatewayStorePath);
+  const adminBackend = options.adminBackend ?? buildAdminBackend(config, accessStore);
   const googleStore = config.googleOAuth ? new GatewayGoogleStore(config.gatewayStorePath) : undefined;
   const googleAdapter = config.googleOAuth && googleStore
     ? new GoogleOAuthAdapter(config.googleOAuth, googleStore)
