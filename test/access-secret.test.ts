@@ -97,6 +97,13 @@ describe("gateway API scope helpers", () => {
     expect(scopeAllowed(["brands.read"], "brands.read")).toBe(true);
   });
 
+  it("allows apps.write scope to satisfy apps.read", () => {
+    expect(scopeAllowed(["apps.write"], "apps.read")).toBe(true);
+    expect(scopeAllowed(["apps.read"], "apps.write")).toBe(false);
+    expect(scopeAllowed(["apps.read"], "apps.read")).toBe(true);
+    expect(scopeAllowed(["apps.write"], "apps.write")).toBe(true);
+  });
+
   it("treats mcp.read as its own explicit scope", () => {
     expect(scopeAllowed(["mcp.read"], "mcp.read")).toBe(true);
     expect(scopeAllowed(["connections.read"], "mcp.read")).toBe(false);
