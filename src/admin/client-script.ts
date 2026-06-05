@@ -687,15 +687,15 @@ function adminClientApp() {
           <td>${statusBadge(connector.authMode)}</td>
           <td>${chips((connector.backendOptions ?? []) as unknown[])}</td>
           <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
-          <td>${chips((connector.scopes ?? []) as unknown[])}</td>
         </tr>`
       )
       .join("");
-    return `${viewHeader("Connectors", "Supported fixture connector catalog and setup contract.")}
+    const connectors = collection("connectors");
+    return `${viewHeader("Connectors", `${connectors.length} connector definitions available to gateway connections.`)}
       <section class="panel">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th><th>Scopes</th></tr></thead>
+            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
