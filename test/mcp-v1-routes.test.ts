@@ -7,13 +7,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GatewayAccessStore } from "../src/access/store.js";
 import type { GatewayApiScope } from "../src/access/types.js";
 import { FixtureGatewayBackend } from "../src/admin/fixture-backend.js";
+import { GatewayAppInstallStore } from "../src/apps/store.js";
 import { createGatewayMcpV1Router } from "../src/mcp-v1/routes.js";
 
 const stores: GatewayAccessStore[] = [];
+const appInstallStores: GatewayAppInstallStore[] = [];
 const tempDirs: string[] = [];
 
-function tempStorePath(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-mcp-routes-"));
+function tempStorePath(prefix = "gateway-mcp-routes-"): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   tempDirs.push(dir);
   return path.join(dir, "gateway.sqlite");
 }
@@ -24,9 +26,15 @@ function openStore(dbPath = tempStorePath()): GatewayAccessStore {
   return store;
 }
 
+function openAppInstallStore(dbPath = tempStorePath("gateway-app-installs-")): GatewayAppInstallStore {
+  const store = new GatewayAppInstallStore(dbPath);
+  appInstallStores.push(store);
+  return store;
+}
+
 function appWithStore(
   store: GatewayAccessStore,
-  opts: { domains?: string[]; users?: string[]; backend?: FixtureGatewayBackend } = {}
+  opts: { domains?: string[]; users?: string[]; backend?: FixtureGatewayBackend; appInstallStore?: GatewayAppInstallStore } = {}
 ) {
   const app = express();
   app.disable("x-powered-by");
@@ -36,7 +44,8 @@ function appWithStore(
       backend: opts.backend ?? new FixtureGatewayBackend(),
       accessStore: store,
       authGateAllowedDomains: opts.domains,
-      authGateAllowedUsers: opts.users
+      authGateAllowedUsers: opts.users,
+      appInstallStore: opts.appInstallStore
     })
   );
   return app;
@@ -54,6 +63,7 @@ function rpc(method: string, params?: unknown, id: number | string | null = 1) {
 
 afterEach(() => {
   while (stores.length > 0) stores.pop()?.close();
+  while (appInstallStores.length > 0) appInstallStores.pop()?.close();
   while (tempDirs.length > 0) fs.rmSync(tempDirs.pop() ?? "", { recursive: true, force: true });
 });
 
@@ -252,5 +262,88 @@ describe("/mcp/v1 routes", () => {
     expect(store.listAuditEvents()).toEqual(
       expect.arrayContaining([expect.objectContaining({ action: "mcp_tool.failed" })])
     );
+  });
+
+  it("gateway_list_apps returns the built-in apps including haverford-storefront", async () => {
+    const store = openStore();
+    const appInstallStore = openAppInstallStore();
+    const { secret } = credential(store, ["apps.read"]);
+
+    const res = await request(appWithStore(store, { appInstallStore }))
+      .post("/mcp/v1")
+      .set("Authorization", `Bearer ${secret}`)
+      .send(rpc("tools/call", { name: "gateway_list_apps", arguments: {} }));
+
+    expect(res.status).toBe(200);
+    expect(res.body.result).toMatchObject({
+      isError: false,
+      structuredContent: { apps: expect.any(Array) }
+    });
+    const apps: Array<{ slug: string }> = res.body.result.structuredContent.apps;
+    expect(apps.map((a) => a.slug)).toContain("haverford-storefront");
+  });
+
+  it("gateway_list_app_installs returns empty list initially then returns created install", async () => {
+    const store = openStore();
+    const appInstallStore = openAppInstallStore();
+    const { secret } = credential(store, ["apps.read"]);
+    const app = appWithStore(store, { appInstallStore });
+
+    // Empty list initially
+    const emptyRes = await request(app)
+      .post("/mcp/v1")
+      .set("Authorization", `Bearer ${secret}`)
+      .send(rpc("tools/call", { name: "gateway_list_app_installs", arguments: {} }));
+
+    expect(emptyRes.status).toBe(200);
+    expect(emptyRes.body.result).toMatchObject({
+      isError: false,
+      structuredContent: { installs: [] },
+      content: [{ type: "text", text: "Found 0 app installs." }]
+    });
+
+    // Pre-create an install and verify it appears
+    appInstallStore.createInstall({
+      appSlug: "haverford-storefront",
+      brandId: "brand_haverford",
+      regionId: "region_au"
+    });
+
+    const filledRes = await request(app)
+      .post("/mcp/v1")
+      .set("Authorization", `Bearer ${secret}`)
+      .send(rpc("tools/call", { name: "gateway_list_app_installs", arguments: { appSlug: "haverford-storefront" } }));
+
+    expect(filledRes.status).toBe(200);
+    expect(filledRes.body.result).toMatchObject({
+      isError: false,
+      structuredContent: {
+        installs: [
+          expect.objectContaining({
+            appSlug: "haverford-storefront",
+            brandId: "brand_haverford",
+            regionId: "region_au",
+            status: "pending"
+          })
+        ]
+      },
+      content: [{ type: "text", text: "Found 1 app install." }]
+    });
+  });
+
+  it("gateway_list_app_installs returns error when no appInstallStore is configured", async () => {
+    const store = openStore();
+    const { secret } = credential(store, ["apps.read"]);
+
+    const res = await request(appWithStore(store))
+      .post("/mcp/v1")
+      .set("Authorization", `Bearer ${secret}`)
+      .send(rpc("tools/call", { name: "gateway_list_app_installs", arguments: {} }));
+
+    expect(res.status).toBe(200);
+    expect(res.body.result).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: "App install store not configured" }]
+    });
   });
 });

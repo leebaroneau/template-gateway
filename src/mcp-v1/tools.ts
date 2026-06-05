@@ -9,6 +9,9 @@ import type {
 } from "../admin/types.js";
 import { toGatewayApiResources } from "../api/resources.js";
 import type { GatewayConnectionApiResource } from "../api/resources.js";
+import { BUILT_IN_APPS } from "../apps/catalog.js";
+import type { GatewayAppInstallStore } from "../apps/store.js";
+import type { GatewayAppInstallStatus } from "../apps/types.js";
 import type { GatewayMcpToolResult, McpToolDefinition } from "./types.js";
 
 type ToolArgs = Record<string, unknown>;
@@ -95,6 +98,25 @@ export const gatewayMcpTools: McpToolDefinition[] = [
       required: ["query"],
       additionalProperties: false
     }
+  },
+  {
+    name: "gateway_list_apps",
+    description: "List available Haverford Gateway apps and their required connectors.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "gateway_list_app_installs",
+    description: "List Haverford Gateway app installs, optionally filtered by app, brand, region, or status.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        appSlug: { type: "string" },
+        brandId: { type: "string" },
+        regionId: { type: "string" },
+        status: { type: "string", enum: ["pending", "enabled", "disabled", "error"] as const }
+      },
+      additionalProperties: false
+    }
   }
 ];
 
@@ -104,7 +126,9 @@ const toolScopes: Record<string, GatewayApiScope> = {
   gateway_list_connectors: "connectors.read",
   gateway_list_connections: "connections.read",
   gateway_get_connection: "connections.read",
-  gateway_find_connections: "connections.read"
+  gateway_find_connections: "connections.read",
+  gateway_list_apps: "apps.read",
+  gateway_list_app_installs: "apps.read"
 };
 
 export function requiredScopeForGatewayMcpTool(name: string): GatewayApiScope | undefined {
@@ -114,7 +138,8 @@ export function requiredScopeForGatewayMcpTool(name: string): GatewayApiScope | 
 export async function callGatewayMcpTool(
   name: string,
   args: unknown,
-  state: GatewayState
+  state: GatewayState,
+  appInstallStore?: GatewayAppInstallStore
 ): Promise<GatewayMcpToolResult> {
   try {
     const parsedArgs = asArgs(args);
@@ -131,6 +156,10 @@ export async function callGatewayMcpTool(
         return getConnection(parsedArgs, state);
       case "gateway_find_connections":
         return findConnections(parsedArgs, state);
+      case "gateway_list_apps":
+        return listApps();
+      case "gateway_list_app_installs":
+        return listAppInstalls(parsedArgs, appInstallStore);
       default:
         return toolError(`Unknown tool: ${name}`);
     }
@@ -230,6 +259,22 @@ function searchableConnectionText(connection: GatewayConnectionApiResource, stat
     .filter((value): value is string => typeof value === "string")
     .join(" ")
     .toLowerCase();
+}
+
+function listApps(): GatewayMcpToolResult {
+  return toolSuccess({ apps: BUILT_IN_APPS }, countText("app", BUILT_IN_APPS.length));
+}
+
+function listAppInstalls(args: ToolArgs, appInstallStore?: GatewayAppInstallStore): GatewayMcpToolResult {
+  if (!appInstallStore) {
+    return toolError("App install store not configured");
+  }
+  const appSlug = optionalString(args.appSlug, "appSlug");
+  const brandId = optionalString(args.brandId, "brandId");
+  const regionId = optionalString(args.regionId, "regionId");
+  const status = optionalEnum(args.status, "status", ["pending", "enabled", "disabled", "error"] as const);
+  const installs = appInstallStore.listInstalls({ appSlug, brandId, regionId, status });
+  return toolSuccess({ installs }, countText("app install", installs.length));
 }
 
 function asArgs(args: unknown): ToolArgs {
