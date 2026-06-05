@@ -53,8 +53,8 @@ describe("ConnectorAdapterRegistry", () => {
     });
   });
 
-  describe("last-registered wins on slug collision", () => {
-    it("last registered adapter wins when two adapters share a slug", () => {
+  describe("priority-chain resolution on slug collision", () => {
+    it("first registered adapter wins when both adapters are available", () => {
       const registry = new ConnectorAdapterRegistry();
       const first = new ComposioConnectorAdapter({
         apiKey: "key-1",
@@ -66,10 +66,35 @@ describe("ConnectorAdapterRegistry", () => {
       });
       registry.register(first);
       registry.register(second);
-      expect(registry.get("shared-slug")).toBe(second);
+      expect(registry.get("shared-slug")).toBe(first);
     });
 
-    it("list() deduplicates so a slug collision returns 1 adapter, not 2", () => {
+    it("falls through to second adapter when first is unconfigured", () => {
+      const registry = new ConnectorAdapterRegistry();
+      const unconfigured = new ComposioConnectorAdapter({
+        apiKey: "",
+        supportedSlugs: ["shared-slug"],
+      });
+      const configured = new ComposioConnectorAdapter({
+        apiKey: "key-2",
+        supportedSlugs: ["shared-slug"],
+      });
+      registry.register(unconfigured);
+      registry.register(configured);
+      expect(registry.get("shared-slug")).toBe(configured);
+    });
+
+    it("resolve() respects backendOverride even when a higher-priority adapter is available", () => {
+      const registry = new ConnectorAdapterRegistry();
+      const nango = new NangoConnectorAdapter({ secretKey: "nango-secret", supportedSlugs: ["shared-slug"] });
+      const composio = new ComposioConnectorAdapter({ apiKey: "composio-key", supportedSlugs: ["shared-slug"] });
+      registry.register(nango);
+      registry.register(composio);
+      expect(registry.resolve("shared-slug")).toBe(nango);
+      expect(registry.resolve("shared-slug", "composio")).toBe(composio);
+    });
+
+    it("list() deduplicates so a slug collision returns 2 adapters, not 3", () => {
       const registry = new ConnectorAdapterRegistry();
       const first = new ComposioConnectorAdapter({
         apiKey: "key-1",
@@ -81,8 +106,9 @@ describe("ConnectorAdapterRegistry", () => {
       });
       registry.register(first);
       registry.register(second);
-      expect(registry.list()).toHaveLength(1);
-      expect(registry.list()[0]).toBe(second);
+      expect(registry.list()).toHaveLength(2);
+      expect(registry.list()).toContain(first);
+      expect(registry.list()).toContain(second);
     });
   });
 });

@@ -52,14 +52,17 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   const appInstallStore = new GatewayAppInstallStore(config.gatewayStorePath);
 
   const connectorRegistry = new ConnectorAdapterRegistry();
-  connectorRegistry.register(new ComposioConnectorAdapter({
-    apiKey: config.composioApiKey ?? "",
-    supportedSlugs: config.composioAdapterSlugs
-  }));
+  // Register in priority order: first-registered = highest priority in resolution chain.
+  // Nango (self-hosted, data-sovereign) is preferred over Composio (SaaS fallback).
+  // Native OAuth adapters (Google, Shopify) will be prepended here in a future phase.
   connectorRegistry.register(new NangoConnectorAdapter({
     secretKey: process.env.NANGO_SECRET_KEY,
     publicKey: process.env.NANGO_PUBLIC_KEY,
     supportedSlugs: config.nangoAdapterSlugs
+  }));
+  connectorRegistry.register(new ComposioConnectorAdapter({
+    apiKey: config.composioApiKey ?? "",
+    supportedSlugs: config.composioAdapterSlugs
   }));
 
   app.get("/health", (_req: Request, res: Response) => {
@@ -71,7 +74,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     });
   });
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore));
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry }));
   app.use(
     "/mcp/v1",

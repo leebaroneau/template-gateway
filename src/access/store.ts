@@ -630,9 +630,16 @@ export class GatewayAccessStore {
       CREATE TABLE IF NOT EXISTS gateway_connector_settings (
         connector_id TEXT PRIMARY KEY NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
+        backend TEXT,
         updated_at TEXT NOT NULL
       );
     `);
+    // Idempotent column addition for existing databases that predate the backend column.
+    try {
+      this.db.exec("ALTER TABLE gateway_connector_settings ADD COLUMN backend TEXT");
+    } catch {
+      // Column already exists — safe to ignore.
+    }
     this.db
       .prepare("INSERT OR IGNORE INTO gateway_schema_migrations (id, applied_at) VALUES (@id, @appliedAt)")
       .run({ id: "002_gateway_access_store", appliedAt: timestamp() });
@@ -656,6 +663,23 @@ export class GatewayAccessStore {
       .prepare("SELECT connector_id FROM gateway_connector_settings WHERE enabled = 0")
       .all() as { connector_id: string }[];
     return rows.map((r) => r.connector_id);
+  }
+
+  getConnectorBackendOverride(connectorId: string): string | null {
+    const row = this.db
+      .prepare("SELECT backend FROM gateway_connector_settings WHERE connector_id = ?")
+      .get(connectorId) as { backend: string | null } | undefined;
+    return row?.backend ?? null;
+  }
+
+  setConnectorBackendOverride(connectorId: string, backend: string | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO gateway_connector_settings (connector_id, enabled, backend, updated_at)
+         VALUES (@connectorId, 1, @backend, @updatedAt)
+         ON CONFLICT(connector_id) DO UPDATE SET backend = @backend, updated_at = @updatedAt`
+      )
+      .run({ connectorId, backend, updatedAt: timestamp() });
   }
 
   private insertAudit(input: AccessAuditInput): AuditEvent {
