@@ -17,6 +17,7 @@ import { createGoogleOAuthRouter } from "./google-oauth/routes.js";
 import { ShopifyOAuthAdapter } from "./shopify-oauth/adapter.js";
 import { GatewayShopifyStore } from "./shopify-oauth/store.js";
 import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
+import { GatewayAppInstallStore } from "./apps/store.js";
 
 interface CreateAppOptions {
   adminBackend?: GatewayConnectionBackend;
@@ -43,6 +44,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   const shopifyAdapter = config.shopifyOAuth && shopifyStore
     ? new ShopifyOAuthAdapter(config.shopifyOAuth, shopifyStore)
     : undefined;
+  const appInstallStore = new GatewayAppInstallStore(config.gatewayStorePath);
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
@@ -54,14 +56,15 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   });
 
   app.use("/admin", createAdminRouter(adminBackend, accessStore));
-  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore }));
+  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore }));
   app.use(
     "/mcp/v1",
     createGatewayMcpV1Router({
       backend: adminBackend,
       accessStore,
       authGateAllowedDomains: config.mcpAuthGateAllowedDomains,
-      authGateAllowedUsers: config.mcpAuthGateAllowedUsers
+      authGateAllowedUsers: config.mcpAuthGateAllowedUsers,
+      appInstallStore
     })
   );
 

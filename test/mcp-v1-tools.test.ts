@@ -12,14 +12,16 @@ async function fixtureState(): Promise<GatewayState> {
 }
 
 describe("gateway MCP v1 tools", () => {
-  it("publishes the six read-only gateway tool definitions", () => {
+  it("publishes the eight read-only gateway tool definitions", () => {
     expect(gatewayMcpTools.map((tool) => tool.name)).toEqual([
       "gateway_list_brands",
       "gateway_list_regions",
       "gateway_list_connectors",
       "gateway_list_connections",
       "gateway_get_connection",
-      "gateway_find_connections"
+      "gateway_find_connections",
+      "gateway_list_apps",
+      "gateway_list_app_installs"
     ]);
     expect(gatewayMcpTools.every((tool) => tool.inputSchema.type === "object")).toBe(true);
   });
