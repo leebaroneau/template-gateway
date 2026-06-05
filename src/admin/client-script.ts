@@ -613,98 +613,93 @@ function adminClientApp() {
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
     const selectedConnection = selectedConnectionForRegion(connections);
 
-    // Level 3 — Connections section (only when a region is selected)
-    const connectionsSection = selectedRegion ? `
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h3>Connections</h3>
-            <p>${h(selectedBrand?.name ?? "")} · ${h(selectedRegion.name)} (${h(selectedRegion.code)})</p>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Connector</th><th>Backend</th><th>Status</th><th></th></tr></thead>
-            <tbody>${connectionRows(connections)}</tbody>
-          </table>
-        </div>
-        ${selectedConnection ? `<div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>` : ""}
-        ${renderConnectorSetup()}
-      </section>` : "";
+    // Region tabs: AU | NZ | SG | UK | + Add
+    const regionTabs = regions.map((region) => {
+      const isActive = region.id === uiState.selectedRegionId;
+      return `<button class="tab${isActive ? " is-active" : ""}" type="button" data-action="select-region" data-region-id="${h(region.id)}">${h(region.code)}</button>`;
+    }).join("");
 
-    // Region list: each row is clickable; selected row shows inline edit form below it
-    const regionListWithInlineEditor = regions.length === 0
-      ? `<div class="empty-panel">No regions for this brand.</div>`
-      : regions.map((region) => {
-          const isSelected = region.id === uiState.selectedRegionId;
-          return `<div class="record-row ${isSelected ? "is-selected" : ""}" style="cursor:pointer" data-action="select-region" data-region-id="${h(region.id)}">
-            <div>
-              <strong>${h(region.name)}</strong>
-              <div class="small muted">${h(region.code)}${region.domain ? ` · ${h(region.domain)}` : ""}</div>
-            </div>
-            ${statusBadge(region.status)}
-          </div>
-          ${isSelected ? `<div class="edit-block" style="padding:12px 16px;background:var(--bg-subtle,#f9fafb);border-bottom:1px solid var(--border)">${renderRegionEditor(region)}</div>` : ""}`;
-        }).join("");
-
-    // Level 2 — Regions section (only when a brand is selected)
-    const regionsSection = selectedBrand ? `
-      <section class="panel">
-        <div class="panel-header">
-          <div><h3>Regions</h3><p>${h(selectedBrand.name)} · ${regions.length} region${regions.length === 1 ? "" : "s"}</p></div>
-        </div>
-        <div class="dense-list">${regionListWithInlineEditor}</div>
-        <details style="padding:0;border-top:1px solid var(--border)">
-          <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none;user-select:none">＋ Add region</summary>
-          <form data-action="create-region" class="form-grid" style="padding:0 16px 16px">
-            <label>Code<input name="code" required placeholder="AU"></label>
-            <label>Name<input name="name" required placeholder="Australia"></label>
-            <label class="span-2">Domain<input name="domain" placeholder="brand.example"></label>
-            <div class="button-row span-2">
-              <button class="btn btn-primary" type="submit">Add region</button>
-            </div>
-          </form>
-        </details>
-      </section>
-      ${connectionsSection}` : "";
-
-    // Level 1 — Brand detail (only when a brand is selected)
-    const brandDetail = selectedBrand
-      ? `<section class="panel">
+    // Right panel — only shown when a brand is selected
+    const rightPanel = !selectedBrand
+      ? `<section class="panel"><div class="empty-panel muted" style="padding:40px;text-align:center">Select a brand to manage its regions and connections.</div></section>`
+      : `<section class="panel">
+          <!-- Brand header with inline edit -->
           <div class="panel-header">
-            <div><h3>${h(selectedBrand.name)}</h3><p>${h(selectedBrand.slug)}</p></div>
-            ${statusBadge(selectedBrand.status)}
+            <div><h3>${h(selectedBrand.name)}</h3><p class="small muted">${h(selectedBrand.slug)}</p></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${statusBadge(selectedBrand.status)}
+              <details>
+                <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted,#6b7280);list-style:none;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff">Edit</summary>
+                <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                  <form data-action="update-brand" data-brand-id="${h(selectedBrand.id)}" class="form-grid">
+                    <label>Name<input name="name" required value="${h(selectedBrand.name)}"></label>
+                    <label>Status<select name="status">${valueOptions(["active", "disabled"], selectedBrand.status)}</select></label>
+                    <div class="button-row span-2"><button class="btn btn-primary" type="submit">Save brand</button>${resetButton("brand", selectedBrand.id)}</div>
+                  </form>
+                </div>
+              </details>
+            </div>
           </div>
-          <details style="padding:0;border-top:1px solid var(--border)">
-            <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none;user-select:none">Edit brand</summary>
-            <form data-action="update-brand" data-brand-id="${h(selectedBrand.id)}" class="form-grid" style="padding:0 16px 16px">
-              <label>Name<input name="name" required value="${h(selectedBrand.name)}"></label>
-              <label>Status<select name="status">${valueOptions(["active", "disabled"], selectedBrand.status)}</select></label>
-              <div class="button-row span-2">
-                <button class="btn btn-primary" type="submit">Save brand</button>
-                ${resetButton("brand", selectedBrand.id)}
-              </div>
-            </form>
-          </details>
-        </section>
-        ${regionsSection}`
-      : `<section class="panel"><div class="empty-panel muted">Select a brand from the list to manage its regions and connections.</div></section>`;
 
-    return `${viewHeader("Brands", `${allBrands.length} brands across ${allRegions.length} regions.`)}
+          <!-- Region tabs + add region -->
+          <div style="display:flex;align-items:center;gap:4px;padding:10px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);flex-wrap:wrap">
+            ${regionTabs}
+            <details style="margin-left:4px">
+              <summary style="cursor:pointer;padding:5px 10px;border-radius:6px;border:1px dashed var(--border);font-size:.82rem;color:var(--text-muted,#6b7280);list-style:none;white-space:nowrap">＋ Add region</summary>
+              <div style="position:absolute;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:280px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                <form data-action="create-region" class="form-grid">
+                  <label>Code<input name="code" required placeholder="AU"></label>
+                  <label>Name<input name="name" required placeholder="Australia"></label>
+                  <label class="span-2">Domain<input name="domain" placeholder="brand.example"></label>
+                  <div class="button-row span-2"><button class="btn btn-primary" type="submit">Add region</button></div>
+                </form>
+              </div>
+            </details>
+          </div>
+
+          <!-- Region meta + edit (only when region selected) -->
+          ${selectedRegion ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--bg-subtle,#f9fafb)">
+            <span class="small muted">${h(selectedRegion.name)}${selectedRegion.domain ? ` · ${h(selectedRegion.domain)}` : ""}</span>
+            <details>
+              <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted,#6b7280);list-style:none;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff">Edit region</summary>
+              <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                ${renderRegionEditor(selectedRegion)}
+              </div>
+            </details>
+          </div>` : ""}
+
+          <!-- Connections table -->
+          ${selectedRegion ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Connection</th><th>Connector</th><th>Backend</th><th>Status</th><th></th></tr></thead>
+              <tbody>${connectionRows(connections)}</tbody>
+            </table>
+          </div>
+          ${selectedConnection ? `<div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>` : ""}
+          <details style="border-top:1px solid var(--border)">
+            <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none">＋ Add connection</summary>
+            <div style="padding:0 16px 16px">${renderConnectorSetup()}</div>
+          </details>` : `<div class="empty-panel muted" style="padding:24px 16px">Select a region tab to view its connections.</div>`}
+
+        </section>`;
+
+    return `${viewHeader("Brands", `${allBrands.length} brands, ${allRegions.length} regions.`)}
       <div class="grid-wide">
         <section class="panel">
           <div class="panel-header"><div><h3>Brands</h3><p>${allBrands.length} configured.</p></div></div>
           <div class="dense-list">${renderBrandList()}</div>
-          <form data-action="create-brand" class="form-grid" style="padding:12px 16px;border-top:1px solid var(--border)">
-            <label>Name<input name="name" required placeholder="New brand"></label>
-            <label>Slug<input name="slug" placeholder="new-brand"></label>
-            <div class="button-row span-2">
-              <button class="btn btn-primary" type="submit">Add brand</button>
-            </div>
-          </form>
+          <details style="border-top:1px solid var(--border)">
+            <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none">＋ New brand</summary>
+            <form data-action="create-brand" class="form-grid" style="padding:0 16px 16px">
+              <label>Name<input name="name" required placeholder="New brand"></label>
+              <label>Slug<input name="slug" placeholder="new-brand"></label>
+              <div class="button-row span-2"><button class="btn btn-primary" type="submit">Add brand</button></div>
+            </form>
+          </details>
         </section>
         <div class="workspace">
-          ${brandDetail}
+          ${rightPanel}
         </div>
       </div>`;
   }
