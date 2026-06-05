@@ -873,7 +873,7 @@ function adminClientApp() {
   }
 
   function renderAudit(): string {
-    return `${viewHeader("Audit", "Fixture audit trail for admin actions.")}
+    return `${viewHeader("Audit", "Admin and MCP access events, connection tests, and key lifecycle.")}
       <section class="panel">
         <div class="table-wrap">
           <table>
@@ -904,14 +904,14 @@ function adminClientApp() {
             </tr>`
           )
           .join("")
-      : `<tr><td colspan="4" class="muted">No app installs found. Use POST /api/v1/app-installs/provision to auto-provision.</td></tr>`;
+      : `<tr><td colspan="4" class="muted">No installs yet. <button class="btn btn-sm" type="button" data-action="provision-apps">Provision installs</button></td></tr>`;
 
     return `${viewHeader("Apps", "Installed app catalog entries across brands.")}
       <section class="panel">
         <div class="panel-header">
           <div>
-            <h3>haverford-storefront</h3>
-            <p>The Haverford unified storefront app. Connects Shopify storefronts with Cin7 inventory and the Gateway routing layer.</p>
+            <h3>Haverford Storefront</h3>
+            <p>Storefront intelligence for a Haverford brand region powered by a connected Shopify store.</p>
           </div>
         </div>
         <div class="meta-grid">
@@ -1195,6 +1195,11 @@ function adminClientApp() {
       render();
     }
     if (action === "refresh-apps") {
+      await refreshAppsState();
+      return;
+    }
+    if (action === "provision-apps") {
+      await postJson("/api/v1/app-installs/provision", {});
       await refreshAppsState();
       return;
     }
