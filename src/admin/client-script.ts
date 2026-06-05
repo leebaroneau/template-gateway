@@ -287,7 +287,7 @@ function adminClientApp() {
         const region = byId("regions", connection.regionId);
         const isSelected = connection.id === uiState.selectedConnectionId;
         return `<tr class="${isSelected ? "is-selected" : ""}">
-          <td><strong>${h(connection.displayName)}</strong><div class="small muted">${h(connection.id)}</div></td>
+          <td><strong>${h(connection.displayName)}</strong></td>
           <td>${h(connector?.name ?? connection.connectorId)}</td>
           <td>${h(region?.code ?? connection.regionId)}</td>
           <td>${h(connection.backendType)}</td>
@@ -325,7 +325,16 @@ function adminClientApp() {
     const connections = collection("connections");
     const activeKeys = collection("apiClients").flatMap((client) => client.keys ?? []).filter((key) => key.status === "active");
     const issueCount = connections.filter((connection) => ["error", "needs_reconnect", "needs_config"].includes(connection.status)).length;
-    return `${viewHeader("Overview", "Fixture-backed operational view for the unified gateway prototype.", `<span class="badge info">Fixture backend</span>`)}
+    const meta = collection("entityMeta");
+    const firstSource = meta.length > 0 ? String((meta[0] as Item).source ?? "") : "";
+    const backendLabel = firstSource === "gateway" ? "Gateway store" : firstSource === "dev_api" ? "Dev API" : "Fixture";
+    const backendBadgeClass = firstSource === "gateway" ? "success" : firstSource === "dev_api" ? "info" : "info";
+    const subtitle = firstSource === "gateway"
+      ? "Live data from the gateway SQLite store. Seeded from Haverford Dev API."
+      : firstSource === "dev_api"
+      ? "Live data from Haverford Dev API."
+      : "Fixture-backed local data.";
+    return `${viewHeader("Overview", subtitle, `<span class="badge ${backendBadgeClass}">${h(backendLabel)}</span>`)}
       <div class="metrics-grid">
         ${metric("Brands", brands.length)}
         ${metric("Regions", regions.length)}
@@ -345,14 +354,23 @@ function adminClientApp() {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Source</th><th>Action</th></tr></thead>
-              <tbody>${connectionRows(connections.slice(0, 8))}</tbody>
+              <thead><tr><th>Name</th><th>Connector</th><th>Rgn</th><th>Status</th></tr></thead>
+              <tbody>${connections.slice(0, 8).map((connection) => {
+                const connector = connectorFor(connection);
+                const region = byId("regions", connection.regionId);
+                return `<tr>
+                  <td><strong>${h(connection.displayName)}</strong></td>
+                  <td class="small">${h(connector?.name ?? connection.connectorId)}</td>
+                  <td class="small">${h(region?.code ?? connection.regionId)}</td>
+                  <td>${statusBadge(connection.status)}</td>
+                </tr>`;
+              }).join("")}</tbody>
             </table>
           </div>
         </section>
         <section class="panel">
           <div class="panel-header">
-            <div><h3>Audit</h3><p>Latest fixture events.</p></div>
+            <div><h3>Audit</h3><p>Latest events.</p></div>
           </div>
           <div class="table-wrap">
             <table>
