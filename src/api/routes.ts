@@ -6,6 +6,7 @@ import { scopeAllowed } from "../access/types.js";
 import type { GatewayConnectionBackend, GatewayState } from "../admin/types.js";
 import { createAppApiRouter } from "../apps/api-routes.js";
 import type { GatewayAppInstallStore } from "../apps/store.js";
+import type { ConnectorAdapterRegistry } from "../connectors/registry.js";
 import type { GatewayShopifyStore } from "../shopify-oauth/store.js";
 import { gatewayApiAuth, gatewayApiRequestPath } from "./auth.js";
 import { GatewayApiError, sendGatewayApiError } from "./errors.js";
@@ -16,6 +17,7 @@ export interface CreateGatewayApiRouterOptions {
   accessStore: GatewayAccessStore;
   appInstallStore?: GatewayAppInstallStore;
   shopifyStore?: GatewayShopifyStore;
+  connectorRegistry?: ConnectorAdapterRegistry;
 }
 
 type GatewayApiReadHandler = (req: Request) => Promise<unknown> | unknown;
@@ -133,7 +135,8 @@ export function createGatewayApiRouter({
   backend,
   accessStore,
   appInstallStore,
-  shopifyStore
+  shopifyStore,
+  connectorRegistry
 }: CreateGatewayApiRouterOptions): express.Router {
   const router = express.Router();
 
@@ -227,6 +230,29 @@ export function createGatewayApiRouter({
       return { connector };
     })
   );
+
+  if (connectorRegistry !== undefined) {
+    router.get(
+      "/connectors/:slug/capabilities",
+      ...gatewayApiRead(accessStore, "connectors.read", (req) => {
+        const { slug } = req.params;
+        const adapter = connectorRegistry.get(slug);
+        if (adapter === undefined) {
+          throw new GatewayApiError(404, "not_found", `No adapter registered for connector: ${slug}`);
+        }
+        const status = adapter.getStatus();
+        return {
+          connectorSlug: slug,
+          adapter: {
+            slug: adapter.info.slug,
+            backendType: adapter.info.backendType,
+            status
+          },
+          capabilities: status === "unconfigured" ? [] : adapter.listCapabilities(slug)
+        };
+      })
+    );
+  }
 
   router.get(
     "/connections",
