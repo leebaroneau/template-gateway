@@ -657,15 +657,23 @@ function adminClientApp() {
             </details>
           </div>
 
-          <!-- Region meta + edit (only when region selected) -->
+          <!-- Region meta strip: domain info + Edit region + Add connection -->
           ${selectedRegion ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--bg-subtle,#f9fafb)">
             <span class="small muted">${h(selectedRegion.name)}${selectedRegion.domain ? ` · ${h(selectedRegion.domain)}` : ""}</span>
-            <details>
-              <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted,#6b7280);list-style:none;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff">Edit region</summary>
-              <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
-                ${renderRegionEditor(selectedRegion)}
-              </div>
-            </details>
+            <div style="display:flex;gap:6px;align-items:center">
+              <details>
+                <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted,#6b7280);list-style:none;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff">Edit region</summary>
+                <div style="position:absolute;right:120px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                  ${renderRegionEditor(selectedRegion)}
+                </div>
+              </details>
+              <details>
+                <summary style="cursor:pointer;font-size:.8rem;color:#fff;list-style:none;padding:4px 10px;border-radius:4px;background:#2a7090;border:1px solid #2a7090">＋ Add connection</summary>
+                <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:360px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                  ${renderConnectorSetup()}
+                </div>
+              </details>
+            </div>
           </div>` : ""}
 
           <!-- Connections table -->
@@ -677,10 +685,7 @@ function adminClientApp() {
             </table>
           </div>
           ${selectedConnection ? `<div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>` : ""}
-          <details style="border-top:1px solid var(--border)">
-            <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none">＋ Add connection</summary>
-            <div style="padding:0 16px 16px">${renderConnectorSetup()}</div>
-          </details>` : `<div class="empty-panel muted" style="padding:24px 16px">Select a region tab to view its connections.</div>`}
+          ` : `<div class="empty-panel muted" style="padding:24px 16px">Select a region tab to view its connections.</div>`}
 
         </section>`;
 
