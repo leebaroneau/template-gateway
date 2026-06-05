@@ -10,6 +10,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
+    "docker:build": "docker build -t template-gateway .",
+    "docker:dev": "docker run --rm -p 3000:3000 --env-file .env.haverford -v \"$(pwd)/data:/data\" template-gateway",
     "start": "node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
