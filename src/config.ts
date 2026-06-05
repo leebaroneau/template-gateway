@@ -7,6 +7,8 @@ export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-a
 export interface GatewayConfig {
   composioApiKey: string;
   composioProjectId?: string;
+  composioAdapterSlugs?: string[];
+  nangoAdapterSlugs?: string[];
   brandSlug: string;
   gatewayBearer: string;
   toolkitAllowlist?: string[];
@@ -161,6 +163,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   return {
     composioApiKey: requireEnv(env, "COMPOSIO_API_KEY"),
     composioProjectId: optionalEnv(env, "COMPOSIO_PROJECT_ID"),
+    composioAdapterSlugs: parseCommaList(optionalEnv(env, "COMPOSIO_ADAPTER_SUPPORTED_SLUGS")),
+    nangoAdapterSlugs: parseCommaList(optionalEnv(env, "NANGO_ADAPTER_SUPPORTED_SLUGS")),
     brandSlug: requireEnv(env, "BRAND_SLUG"),
     gatewayBearer: requireEnv(env, "GATEWAY_BEARER"),
     toolkitAllowlist: parseToolkitAllowlist(env.TOOLKIT_ALLOWLIST),

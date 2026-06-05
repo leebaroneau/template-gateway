@@ -18,6 +18,9 @@ import { ShopifyOAuthAdapter } from "./shopify-oauth/adapter.js";
 import { GatewayShopifyStore } from "./shopify-oauth/store.js";
 import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
 import { GatewayAppInstallStore } from "./apps/store.js";
+import { ComposioConnectorAdapter } from "./connectors/composio.js";
+import { NangoConnectorAdapter } from "./connectors/nango.js";
+import { ConnectorAdapterRegistry } from "./connectors/registry.js";
 
 interface CreateAppOptions {
   adminBackend?: GatewayConnectionBackend;
@@ -46,6 +49,17 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     : undefined;
   const appInstallStore = new GatewayAppInstallStore(config.gatewayStorePath);
 
+  const connectorRegistry = new ConnectorAdapterRegistry();
+  connectorRegistry.register(new ComposioConnectorAdapter({
+    apiKey: config.composioApiKey,
+    supportedSlugs: config.composioAdapterSlugs
+  }));
+  connectorRegistry.register(new NangoConnectorAdapter({
+    secretKey: process.env.NANGO_SECRET_KEY,
+    publicKey: process.env.NANGO_PUBLIC_KEY,
+    supportedSlugs: config.nangoAdapterSlugs
+  }));
+
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
       status: "ok",
@@ -56,7 +70,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   });
 
   app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore));
-  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore }));
+  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry }));
   app.use(
     "/mcp/v1",
     createGatewayMcpV1Router({
