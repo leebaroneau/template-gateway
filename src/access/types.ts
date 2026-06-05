@@ -8,7 +8,9 @@ export const gatewayApiScopes = [
   "mcp.read",
   "api_clients.read",
   "api_clients.write",
-  "audit.read"
+  "audit.read",
+  "apps.read",
+  "apps.write"
 ] as const;
 
 export type GatewayApiScope = (typeof gatewayApiScopes)[number];
@@ -85,6 +87,9 @@ export function validateGatewayApiScopes(values: unknown): GatewayApiScope[] {
 
 export function scopeAllowed(clientScopes: readonly string[], requiredScope: GatewayApiScope): boolean {
   if (requiredScope === "api_clients.read" && clientScopes.includes("api_clients.write")) {
+    return true;
+  }
+  if (requiredScope === "apps.read" && clientScopes.includes("apps.write")) {
     return true;
   }
   return clientScopes.includes(requiredScope);

@@ -4,6 +4,7 @@ import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayApiScope } from "../access/types.js";
 import { scopeAllowed } from "../access/types.js";
 import type { GatewayConnectionBackend } from "../admin/types.js";
+import type { GatewayAppInstallStore } from "../apps/store.js";
 import { authenticateGatewayMcpRequest } from "./auth.js";
 import { callGatewayMcpTool, gatewayMcpTools, requiredScopeForGatewayMcpTool } from "./tools.js";
 import type { GatewayMcpActor, McpJsonRpcRequest } from "./types.js";
@@ -13,6 +14,7 @@ interface CreateGatewayMcpV1RouterOptions {
   accessStore: GatewayAccessStore;
   authGateAllowedDomains?: string[];
   authGateAllowedUsers?: string[];
+  appInstallStore?: GatewayAppInstallStore;
 }
 
 declare module "express-serve-static-core" {
@@ -26,7 +28,8 @@ const metadataReadScopes: GatewayApiScope[] = [
   "brands.read",
   "regions.read",
   "connectors.read",
-  "connections.read"
+  "connections.read",
+  "apps.read"
 ];
 
 export function createGatewayMcpV1Router(options: CreateGatewayMcpV1RouterOptions): express.Router {
@@ -204,7 +207,7 @@ async function handleToolCall(
     return;
   }
 
-  const result = await callGatewayMcpTool(params.value.name, params.value.arguments ?? {}, await options.backend.snapshot());
+  const result = await callGatewayMcpTool(params.value.name, params.value.arguments ?? {}, await options.backend.snapshot(), options.appInstallStore);
   recordToolAudit(options.accessStore, actor, params.value.name, result.isError, {
     resultCount: resultCount(result.structuredContent)
   });

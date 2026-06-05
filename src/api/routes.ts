@@ -4,6 +4,9 @@ import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayApiScope } from "../access/types.js";
 import { scopeAllowed } from "../access/types.js";
 import type { GatewayConnectionBackend, GatewayState } from "../admin/types.js";
+import { createAppApiRouter } from "../apps/api-routes.js";
+import type { GatewayAppInstallStore } from "../apps/store.js";
+import type { GatewayShopifyStore } from "../shopify-oauth/store.js";
 import { gatewayApiAuth, gatewayApiRequestPath } from "./auth.js";
 import { GatewayApiError, sendGatewayApiError } from "./errors.js";
 import { toGatewayApiResources } from "./resources.js";
@@ -11,6 +14,8 @@ import { toGatewayApiResources } from "./resources.js";
 export interface CreateGatewayApiRouterOptions {
   backend: GatewayConnectionBackend;
   accessStore: GatewayAccessStore;
+  appInstallStore?: GatewayAppInstallStore;
+  shopifyStore?: GatewayShopifyStore;
 }
 
 type GatewayApiReadHandler = (req: Request) => Promise<unknown> | unknown;
@@ -124,8 +129,18 @@ async function gatewayState(backend: GatewayConnectionBackend): Promise<GatewayS
   return backend.snapshot();
 }
 
-export function createGatewayApiRouter({ backend, accessStore }: CreateGatewayApiRouterOptions): express.Router {
+export function createGatewayApiRouter({
+  backend,
+  accessStore,
+  appInstallStore,
+  shopifyStore
+}: CreateGatewayApiRouterOptions): express.Router {
   const router = express.Router();
+
+  // Mount app routes when an appInstallStore is provided
+  if (appInstallStore !== undefined) {
+    router.use(createAppApiRouter({ appInstallStore, shopifyStore, backend, accessStore }));
+  }
 
   router.get("/health", (_req: Request, res: Response) => {
     res.json({ status: "ok", version: "v1" });
