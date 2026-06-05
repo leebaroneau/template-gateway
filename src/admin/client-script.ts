@@ -517,11 +517,11 @@ function adminClientApp() {
     return collection("brands")
       .map((brand) => {
         const regions = brandRegions(brand.id);
-        return `<div class="record-row">
+        const isSelected = brand.id === uiState.selectedBrandId;
+        return `<div class="record-row ${isSelected ? "is-selected" : ""}" style="cursor:pointer" data-action="select-brand" data-brand-id="${h(brand.id)}">
           <div>
             <strong>${h(brand.name)}</strong>
-            <div class="small muted">${h(brand.slug)} - ${regions.length} region${regions.length === 1 ? "" : "s"}</div>
-            ${sourceBadge("brand", brand.id)}
+            <div class="small muted">${h(brand.slug)} · ${regions.length} region${regions.length === 1 ? "" : "s"}</div>
           </div>
           ${statusBadge(brand.status)}
         </div>`;
@@ -607,7 +607,7 @@ function adminClientApp() {
     const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
     const selectedConnection = selectedConnectionForRegion(connections);
-    return `${viewHeader("Brands", "Manage brand and region entities for the fixture gateway.")}
+    return `${viewHeader("Brands", `${collection("brands").length} brands across ${collection("regions").length} regions. Click a brand to select it.`)}
       <div class="grid-wide">
         <section class="panel">
           <div class="panel-header"><div><h3>Brands</h3><p>${collection("brands").length} configured.</p></div></div>
@@ -1122,6 +1122,11 @@ function adminClientApp() {
   async function handleButton(button: HTMLElement): Promise<void> {
     clearError();
     const action = button.dataset.action;
+    if (action === "select-brand" && button.dataset.brandId) {
+      selectBrand(button.dataset.brandId);
+      render();
+      return;
+    }
     if (action === "select-connection" && button.dataset.connectionId) {
       uiState.selectedConnectionId = button.dataset.connectionId;
       render();
