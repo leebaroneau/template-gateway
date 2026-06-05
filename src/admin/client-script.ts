@@ -37,6 +37,7 @@ function adminClientApp() {
     "regions.read",
     "connectors.read",
     "connections.read",
+    "mcp.read",
     "api_clients.read",
     "api_clients.write",
     "audit.read",
