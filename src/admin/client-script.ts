@@ -39,7 +39,9 @@ function adminClientApp() {
     "connections.read",
     "api_clients.read",
     "api_clients.write",
-    "audit.read"
+    "audit.read",
+    "apps.read",
+    "apps.write"
   ];
 
   if (!root || !errorPanel) {
@@ -865,7 +867,7 @@ function adminClientApp() {
 
   async function refreshAppsState(): Promise<void> {
     clearError();
-    const result = await requestJson("/api/v1/app-installs");
+    const result = await requestJson("/admin/api/app-installs");
     uiState.appInstalls = Array.isArray(result.installs) ? (result.installs as Item[]) : Array.isArray(result) ? (result as Item[]) : [];
     render();
   }
@@ -879,10 +881,11 @@ function adminClientApp() {
               <td>${h(install.brand ?? install.brandId ?? "—")}</td>
               <td>${h(install.region ?? install.regionId ?? "—")}</td>
               <td>${statusBadge(install.status ?? "unknown")}</td>
+              <td>${install.status === "pending" ? `<button class="btn btn-sm" type="button" data-action="shopify-connect" data-install-id="${h(install.id)}" data-brand-id="${h(install.brandId ?? install.brand ?? "")}" data-region-id="${h(install.regionId ?? install.region ?? "")}">Connect Shopify</button>` : ""}</td>
             </tr>`
           )
           .join("")
-      : `<tr><td colspan="3" class="muted">No app installs found. Use POST /api/v1/app-installs/provision to auto-provision.</td></tr>`;
+      : `<tr><td colspan="4" class="muted">No app installs found. Use POST /api/v1/app-installs/provision to auto-provision.</td></tr>`;
 
     return `${viewHeader("Apps", "Installed app catalog entries across brands.")}
       <section class="panel">
@@ -903,7 +906,7 @@ function adminClientApp() {
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Brand</th><th>Region</th><th>Status</th></tr></thead>
+            <thead><tr><th>Brand</th><th>Region</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>${installRows}</tbody>
           </table>
         </div>
@@ -1168,6 +1171,15 @@ function adminClientApp() {
       render();
     }
     if (action === "refresh-apps") {
+      await refreshAppsState();
+      return;
+    }
+    if (action === "shopify-connect") {
+      const shop = prompt("Enter shop domain (e.g. brand.myshopify.com):");
+      if (!shop || !shop.trim()) {
+        return;
+      }
+      await postJson("/admin/shopify-oauth/install", { shop: shop.trim() });
       await refreshAppsState();
     }
   }

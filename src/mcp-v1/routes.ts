@@ -28,7 +28,8 @@ const metadataReadScopes: GatewayApiScope[] = [
   "brands.read",
   "regions.read",
   "connectors.read",
-  "connections.read"
+  "connections.read",
+  "apps.read"
 ];
 
 export function createGatewayMcpV1Router(options: CreateGatewayMcpV1RouterOptions): express.Router {

@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response } from "express";
 import type { GatewayAccessStore } from "../access/store.js";
+import type { GatewayAppInstallStore } from "../apps/store.js";
 import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
@@ -109,7 +110,8 @@ function entityTypeFromParam(value: string): GatewayEntityType {
 
 export function createAdminRouter(
   backend: GatewayConnectionBackend = new FixtureGatewayBackend(),
-  accessStore?: GatewayAccessStore
+  accessStore?: GatewayAccessStore,
+  appInstallStore?: GatewayAppInstallStore
 ): express.Router {
   const router = express.Router();
 
@@ -347,6 +349,15 @@ export function createAdminRouter(
 
       const key = await backend.revokeApiKey(req.params.clientId, req.params.keyId);
       res.json({ key, state: await snapshotForResponse() });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/api/app-installs", (_req: Request, res: Response) => {
+    try {
+      noStore(res);
+      res.json({ installs: appInstallStore?.listInstalls() ?? [] });
     } catch (error) {
       sendError(res, error);
     }

@@ -55,7 +55,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     });
   });
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore));
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore }));
   app.use(
     "/mcp/v1",
