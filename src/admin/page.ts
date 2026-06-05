@@ -23,6 +23,7 @@ export function renderAdminPage(): string {
           <button class="nav-link" type="button" data-view="connectors">Connectors</button>
           <button class="nav-link" type="button" data-view="api-access">API Access</button>
           <button class="nav-link" type="button" data-view="audit">Audit</button>
+          <button class="nav-link" type="button" data-view="apps">Apps</button>
         </nav>
       </aside>
       <main class="admin-main">

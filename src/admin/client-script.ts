@@ -18,6 +18,7 @@ function adminClientApp() {
     selectedConnectorId: string | null;
     selectedConnectionId: string | null;
     secretReveal: SecretReveal | null;
+    appInstalls?: Item[];
   };
 
   const root = document.getElementById("app-root") as HTMLElement | null;
@@ -862,6 +863,53 @@ function adminClientApp() {
       </section>`;
   }
 
+  async function refreshAppsState(): Promise<void> {
+    clearError();
+    const result = await requestJson("/api/v1/app-installs");
+    uiState.appInstalls = Array.isArray(result.installs) ? (result.installs as Item[]) : Array.isArray(result) ? (result as Item[]) : [];
+    render();
+  }
+
+  function renderApps(): string {
+    const installs = uiState.appInstalls ?? [];
+    const installRows = installs.length
+      ? installs
+          .map(
+            (install) => `<tr>
+              <td>${h(install.brand ?? install.brandId ?? "—")}</td>
+              <td>${h(install.region ?? install.regionId ?? "—")}</td>
+              <td>${statusBadge(install.status ?? "unknown")}</td>
+            </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="3" class="muted">No app installs found. Use POST /api/v1/app-installs/provision to auto-provision.</td></tr>`;
+
+    return `${viewHeader("Apps", "Installed app catalog entries across brands.")}
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h3>haverford-storefront</h3>
+            <p>The Haverford unified storefront app. Connects Shopify storefronts with Cin7 inventory and the Gateway routing layer.</p>
+          </div>
+        </div>
+        <div class="meta-grid">
+          ${accessMetric("Required connectors", h("shopify, cin7"))}
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <div><h3>Installs</h3><p>Active app installs per brand and region.</p></div>
+          <button class="btn" type="button" data-action="refresh-apps">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Brand</th><th>Region</th><th>Status</th></tr></thead>
+            <tbody>${installRows}</tbody>
+          </table>
+        </div>
+      </section>`;
+  }
+
   function render(): void {
     document.querySelectorAll<HTMLElement>("[data-view]").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.view === uiState.view);
@@ -876,7 +924,8 @@ function adminClientApp() {
       brands: renderBrands,
       connectors: renderConnectors,
       "api-access": renderApiAccess,
-      audit: renderAudit
+      audit: renderAudit,
+      apps: renderApps
     };
     appRoot.innerHTML = (views[uiState.view] ?? renderOverview)();
   }
@@ -1118,6 +1167,9 @@ function adminClientApp() {
       }
       render();
     }
+    if (action === "refresh-apps") {
+      await refreshAppsState();
+    }
   }
 
   document.addEventListener("click", (event) => {
@@ -1125,6 +1177,9 @@ function adminClientApp() {
     const viewButton = target?.closest<HTMLElement>("button[data-view]");
     if (viewButton?.dataset.view) {
       uiState.view = viewButton.dataset.view;
+      if (viewButton.dataset.view === "apps") {
+        void refreshAppsState().catch((error: unknown) => showError(error instanceof Error ? error.message : String(error)));
+      }
       render();
       return;
     }
