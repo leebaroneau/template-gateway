@@ -30,7 +30,12 @@ export type AuditAction =
   | "mcp_auth.failed"
   | "mcp_tool.listed"
   | "mcp_tool.called"
-  | "mcp_tool.failed";
+  | "mcp_tool.failed"
+  | "oauth_account.created"
+  | "oauth_account.updated"
+  | "oauth_account.revoked"
+  | "oauth_account_link.created"
+  | "oauth_account_link.removed";
 
 export interface Brand {
   id: string;
@@ -109,7 +114,7 @@ export interface ApiClient {
 export interface AuditEvent {
   id: string;
   action: AuditAction;
-  targetType: "brand" | "region" | "connection" | "api_key" | "api_client";
+  targetType: "brand" | "region" | "connection" | "api_key" | "api_client" | "oauth_account" | "oauth_account_link";
   targetId: string;
   detail: string;
   timestamp: string;

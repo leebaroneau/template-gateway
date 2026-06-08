@@ -18,6 +18,7 @@ import { ShopifyOAuthAdapter } from "./shopify-oauth/adapter.js";
 import { GatewayShopifyStore } from "./shopify-oauth/store.js";
 import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
 import { GatewayAppInstallStore } from "./apps/store.js";
+import { GatewayAccountStore } from "./account-credentials/store.js";
 import { ComposioConnectorAdapter } from "./connectors/composio.js";
 import { NangoConnectorAdapter } from "./connectors/nango.js";
 import { ConnectorAdapterRegistry } from "./connectors/registry.js";
@@ -50,6 +51,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     ? new ShopifyOAuthAdapter(config.shopifyOAuth, shopifyStore)
     : undefined;
   const appInstallStore = new GatewayAppInstallStore(config.gatewayStorePath);
+  const accountStore = new GatewayAccountStore(config.gatewayStorePath);
 
   const connectorRegistry = new ConnectorAdapterRegistry();
   // Register in priority order: first-registered = highest priority in resolution chain.
