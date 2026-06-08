@@ -130,14 +130,14 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS gateway_audit_events (
-    id TEXT PRIMARY KEY NOT NULL,
+    id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
     target_type TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    detail TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL,
     actor TEXT NOT NULL,
-    metadata_json TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL
+    metadata_json TEXT,
+    timestamp TEXT NOT NULL
   );
 `);
 

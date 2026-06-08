@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "issuedKeyLabelPrefix": "dev-api-import",
+  "apps": [
+    {
+      "key": "quatra-ops",
+      "name": "Quatra Ops Sync",
+      "type": "service",
+      "owner": "quatra-ops",
+      "scopes": ["brands.read", "connections.read"],
+      "notes": "Reads brand and connection config for operations sync"
+    }
+  ]
+}

@@ -8,3 +8,4 @@ coverage/
 *.log
 data/
 .worktrees/
+config/dev-api-apps.manifest.json
