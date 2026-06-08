@@ -180,7 +180,8 @@ export class GatewayAccountStore {
          VALUES (
            @id, @accountId, @brandId, @regionId, @connectorSlug, @connectionId, @now, @now
          )
-         ON CONFLICT(account_id, brand_id, region_id, connector_slug) DO UPDATE SET
+         ON CONFLICT(brand_id, region_id, connector_slug) DO UPDATE SET
+           account_id    = excluded.account_id,
            connection_id = COALESCE(excluded.connection_id, connection_id),
            updated_at    = excluded.updated_at
          RETURNING id`
@@ -266,7 +267,7 @@ export class GatewayAccountStore {
         connection_id   TEXT,
         created_at      TEXT NOT NULL,
         updated_at      TEXT NOT NULL,
-        UNIQUE(account_id, brand_id, region_id, connector_slug),
+        UNIQUE(brand_id, region_id, connector_slug),
         FOREIGN KEY(account_id) REFERENCES gateway_oauth_accounts(id)
       );
       CREATE INDEX IF NOT EXISTS idx_oauth_links_account ON gateway_oauth_account_links(account_id);

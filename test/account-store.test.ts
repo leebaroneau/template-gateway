@@ -105,6 +105,21 @@ describe("GatewayAccountStore", () => {
       expect(links.map((l) => l.id)).toContain(l3);
     });
 
+    it("re-linking the same scope to a different account replaces the link (scope uniqueness)", () => {
+      const store = openStore();
+      const ep1 = encryptCredential({ service: "google", externalAccountId: "admin1@x", refreshToken: "tok1" }, TEST_KEY);
+      const ep2 = encryptCredential({ service: "google", externalAccountId: "admin2@x", refreshToken: "tok2" }, TEST_KEY);
+      const a1 = store.upsertAccount({ service: "google", externalAccountId: "admin1@x", encryptedPayload: ep1, status: "connected" });
+      const a2 = store.upsertAccount({ service: "google", externalAccountId: "admin2@x", encryptedPayload: ep2, status: "connected" });
+      store.linkAccount({ accountId: a1, brandId: "brand_a", regionId: "au", connectorSlug: "google-analytics-4" });
+      store.linkAccount({ accountId: a2, brandId: "brand_a", regionId: "au", connectorSlug: "google-analytics-4" });
+      const link = store.getLinkForScope({ service: "google", brandId: "brand_a", regionId: "au", connectorSlug: "google-analytics-4" });
+      expect(link).toBeDefined();
+      expect(link!.accountId).toBe(a2);
+      expect(store.listLinksForAccount(a1)).toHaveLength(0);
+      expect(store.listLinksForAccount(a2)).toHaveLength(1);
+    });
+
     it("re-linking the same tuple returns the same link id and advances updatedAt", async () => {
       const store = openStore();
       const ep = encryptCredential({ service: "google", externalAccountId: "admin@x", refreshToken: "tok" }, TEST_KEY);
