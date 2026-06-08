@@ -72,7 +72,7 @@ function bearerSecret(header: string | undefined): string | undefined {
   return match?.[1];
 }
 
-function isAllowedAuthGateEmail(
+export function isAllowedAuthGateEmail(
   email: string,
   allowedDomains: string[] | undefined,
   allowedUsers: string[] | undefined

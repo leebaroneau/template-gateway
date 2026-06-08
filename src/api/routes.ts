@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayApiScope } from "../access/types.js";
 import { scopeAllowed } from "../access/types.js";
+import { contextFromState } from "../mcp-v1/connection-auth.js";
 import type { GatewayConnectionBackend, GatewayState } from "../admin/types.js";
 import { createAppApiRouter } from "../apps/api-routes.js";
 import type { GatewayAppInstallStore } from "../apps/store.js";
@@ -18,6 +19,7 @@ export interface CreateGatewayApiRouterOptions {
   appInstallStore?: GatewayAppInstallStore;
   shopifyStore?: GatewayShopifyStore;
   connectorRegistry?: ConnectorAdapterRegistry;
+  mcpConnectionBaseUrl?: string;
 }
 
 type GatewayApiReadHandler = (req: Request) => Promise<unknown> | unknown;
@@ -123,6 +125,14 @@ function gatewayApiRead(
   ];
 }
 
+function gatewayApiWrite(
+  accessStore: GatewayAccessStore,
+  requiredScope: GatewayApiScope,
+  handler: GatewayApiReadHandler
+) {
+  return gatewayApiRead(accessStore, requiredScope, handler);
+}
+
 async function gatewayApiResources(backend: GatewayConnectionBackend) {
   return toGatewayApiResources(await backend.snapshot());
 }
@@ -136,9 +146,11 @@ export function createGatewayApiRouter({
   accessStore,
   appInstallStore,
   shopifyStore,
-  connectorRegistry
+  connectorRegistry,
+  mcpConnectionBaseUrl
 }: CreateGatewayApiRouterOptions): express.Router {
   const router = express.Router();
+  router.use(express.json({ limit: "1mb" }));
 
   // Mount app routes when an appInstallStore is provided
   if (appInstallStore !== undefined) {
@@ -273,6 +285,63 @@ export function createGatewayApiRouter({
     })
   );
 
+  router.post(
+    "/connections/:connectionId/mcp-tokens",
+    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) => {
+      const state = await gatewayState(backend);
+      const context = contextFromState(state, req.params.connectionId);
+      if (context === undefined) {
+        throw notFound("Connection", req.params.connectionId);
+      }
+      const connection = state.connections.find((candidate) => candidate.id === req.params.connectionId);
+      if (connection?.status !== "connected") {
+        throw new GatewayApiError(403, "forbidden", `Connection is unavailable: ${req.params.connectionId}`);
+      }
+      const label = requestLabel(req.body);
+      return accessStore.mintConnectionToken({
+        connectionId: req.params.connectionId,
+        context,
+        label,
+        actor: req.gatewayApiAuth?.client.id ?? "api-client",
+        mcpConnectionBaseUrl
+      });
+    })
+  );
+
+  router.get(
+    "/connections/:connectionId/mcp-tokens",
+    ...gatewayApiRead(accessStore, "api_clients.read", async (req) => {
+      const state = await gatewayState(backend);
+      if (contextFromState(state, req.params.connectionId) === undefined) {
+        throw notFound("Connection", req.params.connectionId);
+      }
+      return { tokens: accessStore.listConnectionTokens(req.params.connectionId) };
+    })
+  );
+
+  router.post(
+    "/connections/:connectionId/mcp-tokens/:tokenId/rotate",
+    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) =>
+      accessStore.rotateConnectionToken(
+        req.params.connectionId,
+        req.params.tokenId,
+        req.gatewayApiAuth?.client.id ?? "api-client",
+        mcpConnectionBaseUrl
+      )
+    )
+  );
+
+  router.delete(
+    "/connections/:connectionId/mcp-tokens/:tokenId",
+    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) => ({
+      token: accessStore.revokeConnectionToken(
+        req.params.connectionId,
+        req.params.tokenId,
+        req.gatewayApiAuth?.client.id ?? "api-client"
+      )
+    }))
+  );
+
   router.use(
     "*",
     ...gatewayApiRead(accessStore, undefined, (req) => {
@@ -289,4 +358,15 @@ export function createGatewayApiRouter({
   });
 
   return router;
+}
+
+function requestLabel(body: unknown): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new GatewayApiError(400, "invalid_request", "Request body must be an object");
+  }
+  const label = (body as { label?: unknown }).label;
+  if (typeof label !== "string" || label.trim() === "") {
+    throw new GatewayApiError(400, "invalid_request", "label is required");
+  }
+  return label.trim();
 }
