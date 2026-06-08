@@ -20,6 +20,18 @@ export interface SaveCredentialInput {
   status: GoogleCredentialStatus;
 }
 
+export interface UpsertCredentialInput {
+  brandId: string;
+  regionId: string;
+  connectorSlug: string;
+  accountId: string;
+  googleAccountEmail: string;
+  encryptedPayload: string;
+  tokenExpiryAt?: string;
+  products: GoogleProduct[];
+  status: GoogleCredentialStatus;
+}
+
 export interface SaveBindingInput {
   credentialId: string;
   connectionId: string;
@@ -51,6 +63,8 @@ interface GoogleCredentialRow {
   updated_at: string;
   last_refreshed_at: string | null;
   error_detail: string | null;
+  account_id: string | null;
+  connector_slug: string | null;
 }
 
 interface GoogleBindingRow {
@@ -62,6 +76,14 @@ interface GoogleBindingRow {
   resource_name: string | null;
   created_at: string;
 }
+
+// Inverse map from GoogleProduct to connector slug, used for migration backfill.
+const PRODUCT_TO_SLUG: Record<string, string> = {
+  ga4: "google-analytics-4",
+  gsc: "google-search-console",
+  google_ads: "google-ads",
+  merchant_center: "merchant-center"
+};
 
 function timestamp(): string {
   return new Date().toISOString();
@@ -169,7 +191,53 @@ export class GatewayGoogleStore {
     return id;
   }
 
-  getCredential(id: string): (GoogleOAuthCredential & { encryptedPayload: string }) | undefined {
+  // Idempotent upsert for account-linked credentials. Uses ON CONFLICT on the
+  // partial unique index (brand_id, region_id, connector_slug WHERE connector_slug IS NOT NULL).
+  // Returns the RETURNING id (existing row's id on conflict).
+  upsertCredential(input: UpsertCredentialInput): string {
+    const now = timestamp();
+    const newId = generatedId("google_cred_");
+    const row = this.db
+      .prepare(
+        `INSERT INTO gateway_google_credentials (
+           id, brand_id, region_id, connector_slug, account_id, google_account_email,
+           encrypted_payload, token_expiry_at, products_json, status,
+           created_at, updated_at, last_refreshed_at, error_detail
+         )
+         VALUES (
+           @id, @brandId, @regionId, @connectorSlug, @accountId, @googleAccountEmail,
+           @encryptedPayload, @tokenExpiryAt, @productsJson, @status,
+           @now, @now, NULL, NULL
+         )
+         ON CONFLICT(brand_id, region_id, connector_slug) DO UPDATE SET
+           account_id        = excluded.account_id,
+           google_account_email = excluded.google_account_email,
+           encrypted_payload = excluded.encrypted_payload,
+           token_expiry_at   = excluded.token_expiry_at,
+           products_json     = excluded.products_json,
+           status            = excluded.status,
+           error_detail      = NULL,
+           last_refreshed_at = @now,
+           updated_at        = @now
+         RETURNING id`
+      )
+      .get({
+        id: newId,
+        brandId: input.brandId,
+        regionId: input.regionId,
+        connectorSlug: input.connectorSlug,
+        accountId: input.accountId,
+        googleAccountEmail: input.googleAccountEmail,
+        encryptedPayload: input.encryptedPayload,
+        tokenExpiryAt: input.tokenExpiryAt ?? null,
+        productsJson: JSON.stringify(input.products),
+        status: input.status,
+        now
+      }) as { id: string };
+    return row.id;
+  }
+
+  getCredential(id: string): (GoogleOAuthCredential & { encryptedPayload: string; accountId?: string; connectorSlug?: string }) | undefined {
     const row = this.db
       .prepare("SELECT * FROM gateway_google_credentials WHERE id = ?")
       .get(id) as GoogleCredentialRow | undefined;
@@ -179,10 +247,31 @@ export class GatewayGoogleStore {
     return this.credentialFromRow(row);
   }
 
-  listCredentials(): Array<GoogleOAuthCredential & { encryptedPayload: string }> {
+  getCredentialByScope(
+    brandId: string,
+    regionId: string,
+    connectorSlug: string
+  ): (GoogleOAuthCredential & { encryptedPayload: string; accountId?: string; connectorSlug?: string }) | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM gateway_google_credentials WHERE brand_id = @brandId AND region_id = @regionId AND connector_slug = @connectorSlug"
+      )
+      .get({ brandId, regionId, connectorSlug }) as GoogleCredentialRow | undefined;
+    if (!row) return undefined;
+    return this.credentialFromRow(row);
+  }
+
+  listCredentials(): Array<GoogleOAuthCredential & { encryptedPayload: string; accountId?: string; connectorSlug?: string }> {
     const rows = this.db
       .prepare("SELECT * FROM gateway_google_credentials ORDER BY created_at ASC, id ASC")
       .all() as GoogleCredentialRow[];
+    return rows.map((row) => this.credentialFromRow(row));
+  }
+
+  listCredentialsForAccount(accountId: string): Array<GoogleOAuthCredential & { encryptedPayload: string; accountId?: string; connectorSlug?: string }> {
+    const rows = this.db
+      .prepare("SELECT * FROM gateway_google_credentials WHERE account_id = ? ORDER BY created_at ASC, id ASC")
+      .all(accountId) as GoogleCredentialRow[];
     return rows.map((row) => this.credentialFromRow(row));
   }
 
@@ -273,6 +362,7 @@ export class GatewayGoogleStore {
   // ── Migrations ───────────────────────────────────────────────────────────────
 
   private runMigrations(): void {
+    // Phase 4 base tables
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS gateway_google_oauth_states (
         state TEXT PRIMARY KEY,
@@ -308,6 +398,121 @@ export class GatewayGoogleStore {
         FOREIGN KEY(credential_id) REFERENCES gateway_google_credentials(id)
       );
     `);
+
+    // Additive migration: account_id + connector_slug columns + dedup + unique index
+    const existingColumns = (
+      this.db.pragma("table_info(gateway_google_credentials)") as Array<{ name: string }>
+    ).map((c) => c.name);
+
+    if (!existingColumns.includes("account_id")) {
+      this.db.exec("ALTER TABLE gateway_google_credentials ADD COLUMN account_id TEXT");
+    }
+    if (!existingColumns.includes("connector_slug")) {
+      this.db.exec("ALTER TABLE gateway_google_credentials ADD COLUMN connector_slug TEXT");
+    }
+
+    // Step 1: Dedup single-product rows that will share the same derived
+    // connector_slug BEFORE backfill, using products_json[0] as the key.
+    // Keeps the row with the highest rowid (latest insert).
+    const preDedup = this.db.transaction(() => {
+      const preGroups = this.db
+        .prepare(
+          `SELECT brand_id, region_id,
+                  json_extract(products_json, '$[0]') AS product,
+                  MAX(rowid) AS keep_rowid
+           FROM gateway_google_credentials
+           WHERE connector_slug IS NULL AND json_array_length(products_json) = 1
+           GROUP BY brand_id, region_id, json_extract(products_json, '$[0]')
+           HAVING COUNT(*) > 1`
+        )
+        .all() as Array<{
+          brand_id: string;
+          region_id: string;
+          product: string;
+          keep_rowid: number;
+        }>;
+      for (const g of preGroups) {
+        const stale = this.db
+          .prepare(
+            `SELECT id FROM gateway_google_credentials
+             WHERE brand_id = @brand_id AND region_id = @region_id
+               AND connector_slug IS NULL AND json_array_length(products_json) = 1
+               AND json_extract(products_json, '$[0]') = @product
+               AND rowid != @keep_rowid`
+          )
+          .all(g) as Array<{ id: string }>;
+        for (const { id } of stale) {
+          this.db
+            .prepare("DELETE FROM gateway_google_connection_bindings WHERE credential_id = ?")
+            .run(id);
+          this.db.prepare("DELETE FROM gateway_google_credentials WHERE id = ?").run(id);
+        }
+      }
+    });
+    preDedup();
+
+    // Step 2: Backfill connector_slug for surviving single-product rows.
+    const singleProductRows = this.db
+      .prepare(
+        `SELECT id, products_json FROM gateway_google_credentials
+         WHERE connector_slug IS NULL AND json_array_length(products_json) = 1`
+      )
+      .all() as Array<{ id: string; products_json: string }>;
+    for (const row of singleProductRows) {
+      const product = (JSON.parse(row.products_json) as string[])[0];
+      const slug = PRODUCT_TO_SLUG[product];
+      if (slug) {
+        this.db
+          .prepare("UPDATE gateway_google_credentials SET connector_slug = ? WHERE id = ?")
+          .run(slug, row.id);
+      }
+    }
+
+    // Step 3: Dedup any remaining connector_slug conflicts (rows that had
+    // connector_slug pre-set from a prior migration with duplicate data).
+    const postGroups = this.db
+      .prepare(
+        `SELECT brand_id, region_id, connector_slug, MAX(rowid) AS keep_rowid
+         FROM gateway_google_credentials
+         WHERE connector_slug IS NOT NULL
+         GROUP BY brand_id, region_id, connector_slug
+         HAVING COUNT(*) > 1`
+      )
+      .all() as Array<{
+        brand_id: string;
+        region_id: string;
+        connector_slug: string;
+        keep_rowid: number;
+      }>;
+    const postDedup = this.db.transaction(() => {
+      for (const g of postGroups) {
+        const stale = this.db
+          .prepare(
+            `SELECT id FROM gateway_google_credentials
+             WHERE brand_id = @brand_id AND region_id = @region_id
+               AND connector_slug = @connector_slug AND rowid != @keep_rowid`
+          )
+          .all(g) as Array<{ id: string }>;
+        for (const { id } of stale) {
+          this.db
+            .prepare("DELETE FROM gateway_google_connection_bindings WHERE credential_id = ?")
+            .run(id);
+          this.db.prepare("DELETE FROM gateway_google_credentials WHERE id = ?").run(id);
+        }
+      }
+    });
+    postDedup();
+
+    // Step 4: Create indexes. Using a full (non-partial) unique index so that
+    // ON CONFLICT(brand_id, region_id, connector_slug) in upsertCredential can
+    // reference it directly. SQLite treats NULL as distinct, so multiple rows
+    // with NULL connector_slug are allowed (legacy Phase-4 rows are safe).
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_google_cred_account
+        ON gateway_google_credentials(account_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_google_cred_scope
+        ON gateway_google_credentials(brand_id, region_id, connector_slug);
+    `);
   }
 
   // ── Row mappers ──────────────────────────────────────────────────────────────
@@ -324,8 +529,10 @@ export class GatewayGoogleStore {
     };
   }
 
-  private credentialFromRow(row: GoogleCredentialRow): GoogleOAuthCredential & { encryptedPayload: string } {
-    const cred: GoogleOAuthCredential & { encryptedPayload: string } = {
+  private credentialFromRow(
+    row: GoogleCredentialRow
+  ): GoogleOAuthCredential & { encryptedPayload: string; accountId?: string; connectorSlug?: string } {
+    const cred: GoogleOAuthCredential & { encryptedPayload: string; accountId?: string; connectorSlug?: string } = {
       id: row.id,
       brandId: row.brand_id,
       regionId: row.region_id,
@@ -336,15 +543,11 @@ export class GatewayGoogleStore {
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
-    if (row.token_expiry_at !== null) {
-      cred.tokenExpiryAt = row.token_expiry_at;
-    }
-    if (row.last_refreshed_at !== null) {
-      cred.lastRefreshedAt = row.last_refreshed_at;
-    }
-    if (row.error_detail !== null) {
-      cred.errorDetail = row.error_detail;
-    }
+    if (row.token_expiry_at !== null) cred.tokenExpiryAt = row.token_expiry_at;
+    if (row.last_refreshed_at !== null) cred.lastRefreshedAt = row.last_refreshed_at;
+    if (row.error_detail !== null) cred.errorDetail = row.error_detail;
+    if (row.account_id !== null) cred.accountId = row.account_id;
+    if (row.connector_slug !== null) cred.connectorSlug = row.connector_slug;
     return cred;
   }
 
