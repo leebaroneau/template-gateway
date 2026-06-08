@@ -19,6 +19,7 @@ import { GatewayShopifyStore } from "./shopify-oauth/store.js";
 import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
 import { GatewayAppInstallStore } from "./apps/store.js";
 import { GatewayAccountStore } from "./account-credentials/store.js";
+import { GoogleAccountLinker } from "./google-oauth/linker.js";
 import { ComposioConnectorAdapter } from "./connectors/composio.js";
 import { NangoConnectorAdapter } from "./connectors/nango.js";
 import { ConnectorAdapterRegistry } from "./connectors/registry.js";
@@ -89,13 +90,20 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     })
   );
 
+  const googleLinker = config.googleOAuth && googleAdapter && googleStore
+    ? new GoogleAccountLinker(adminBackend, accountStore, googleStore, googleAdapter, accessStore)
+    : undefined;
+
   app.use(
     "/admin/google-oauth",
     createGoogleOAuthRouter({
       config: config.googleOAuth,
       adapter: googleAdapter,
       store: config.googleOAuth ? googleStore : undefined,
-      bearer: config.gatewayBearer
+      bearer: config.gatewayBearer,
+      accessStore,
+      accountStore,
+      linker: googleLinker
     })
   );
 

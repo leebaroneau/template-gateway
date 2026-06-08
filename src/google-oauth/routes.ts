@@ -2,14 +2,20 @@ import express from "express";
 import type { GoogleOAuthConfig } from "./adapter.js";
 import type { GoogleOAuthAdapter } from "./adapter.js";
 import type { GatewayGoogleStore } from "./store.js";
+import type { GatewayAccountStore } from "../account-credentials/store.js";
+import type { GatewayAccessStore } from "../access/store.js";
+import type { GoogleAccountLinker } from "./linker.js";
 import { googleProducts } from "./types.js";
-import type { GoogleOAuthCredential } from "./types.js";
+import type { GoogleLinkRequest, GoogleOAuthCredential } from "./types.js";
 
 export interface CreateGoogleOAuthRouterOptions {
   config: GoogleOAuthConfig | undefined;
   adapter: GoogleOAuthAdapter | undefined;
   store: GatewayGoogleStore | undefined;
   bearer: string;
+  accessStore?: GatewayAccessStore;
+  accountStore?: GatewayAccountStore;
+  linker?: GoogleAccountLinker;
 }
 
 function stripEncryptedPayload(
@@ -25,7 +31,7 @@ export function createGoogleOAuthRouter(
   const router = express.Router();
   router.use(express.json());
 
-  const { config, adapter, store, bearer } = options;
+  const { config, adapter, store, bearer, accountStore, linker } = options;
 
   // If not configured, all routes return 501
   if (!config || !adapter || !store) {
@@ -120,6 +126,28 @@ export function createGoogleOAuthRouter(
       return;
     }
 
+    // Dispatch: account flow uses acct_ prefix; per-brand flow does not.
+    if (state.startsWith("acct_") && accountStore) {
+      try {
+        const { account } = await adapter.completeAccountFlow({ code, state }, accountStore);
+        // Strip encryptedPayload before sending to client
+        if (account) {
+          const { encryptedPayload: _omit, ...publicAccount } = account;
+          res.json({ account: publicAccount });
+        } else {
+          res.json({ account: null });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message === "Invalid or expired OAuth state") {
+          res.status(400).json({ error: "invalid_state", message });
+          return;
+        }
+        res.status(502).json({ error: "upstream_error", message });
+      }
+      return;
+    }
+
     try {
       const result = await adapter.completeFlow({ code, state });
       const credential = stripEncryptedPayload(
@@ -162,6 +190,102 @@ export function createGoogleOAuthRouter(
       res.json({ refreshed, credential });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: "upstream_error", message });
+    }
+  });
+
+  // ── Account-level routes ──────────────────────────────────────────────────────
+
+  // POST /account/start — one consent for the whole admin account
+  router.post("/account/start", requireBearer, (_req, res) => {
+    if (!accountStore) {
+      res.status(501).json({ error: "not_configured", message: "Account store not configured." });
+      return;
+    }
+    const result = adapter.startAccountFlow();
+    res.json(result);
+  });
+
+  // GET /account/link-plan — preview which connections will be linked
+  router.get("/account/link-plan", requireBearer, async (req, res) => {
+    if (!accountStore || !linker) {
+      res.status(501).json({ error: "not_configured", message: "Linker not configured." });
+      return;
+    }
+
+    let accountId = req.query.accountId as string | undefined;
+    if (!accountId) {
+      const accounts = accountStore.listAccounts("google");
+      if (accounts.length === 1) {
+        accountId = accounts[0].id;
+      } else if (accounts.length === 0) {
+        res.status(404).json({ error: "not_found", message: "No Google account found. Run /account/start first." });
+        return;
+      } else {
+        res.status(400).json({ error: "invalid_input", message: "Multiple Google accounts found; provide accountId." });
+        return;
+      }
+    }
+
+    try {
+      const plan = await linker.buildPlan(accountId);
+      res.json(plan);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: string }).code;
+      if (code === "not_found") {
+        res.status(404).json({ error: "not_found", message });
+        return;
+      }
+      if (code === "conflict") {
+        res.status(409).json({ error: "conflict", message });
+        return;
+      }
+      res.status(502).json({ error: "upstream_error", message });
+    }
+  });
+
+  // POST /account/link — confirm and provision links
+  router.post("/account/link", requireBearer, async (req, res) => {
+    if (!accountStore || !linker) {
+      res.status(501).json({ error: "not_configured", message: "Linker not configured." });
+      return;
+    }
+
+    const body = req.body as GoogleLinkRequest & { accountId?: string };
+    let accountId = body.accountId;
+    if (!accountId) {
+      const accounts = accountStore.listAccounts("google");
+      if (accounts.length === 1) {
+        accountId = accounts[0].id;
+      } else if (accounts.length === 0) {
+        res.status(404).json({ error: "not_found", message: "No Google account found." });
+        return;
+      } else {
+        res.status(400).json({ error: "invalid_input", message: "Multiple accounts; provide accountId." });
+        return;
+      }
+    }
+
+    if (body.connectionIds !== undefined && !Array.isArray(body.connectionIds)) {
+      res.status(400).json({ error: "invalid_input", message: "connectionIds must be an array." });
+      return;
+    }
+
+    try {
+      const result = await linker.applyLinks(accountId, { connectionIds: body.connectionIds });
+      res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: string }).code;
+      if (code === "not_found") {
+        res.status(404).json({ error: "not_found", message });
+        return;
+      }
+      if (code === "conflict") {
+        res.status(409).json({ error: "conflict", message });
+        return;
+      }
       res.status(502).json({ error: "upstream_error", message });
     }
   });
