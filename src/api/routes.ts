@@ -9,6 +9,7 @@ import { createAppApiRouter } from "../apps/api-routes.js";
 import type { GatewayAppInstallStore } from "../apps/store.js";
 import type { ConnectorAdapterRegistry } from "../connectors/registry.js";
 import type { GatewayShopifyStore } from "../shopify-oauth/store.js";
+import { AccessStoreError } from "../access/store.js";
 import { gatewayApiAuth, gatewayApiRequestPath } from "./auth.js";
 import { GatewayApiError, sendGatewayApiError } from "./errors.js";
 import { toGatewayApiResources } from "./resources.js";
@@ -298,13 +299,17 @@ export function createGatewayApiRouter({
         throw new GatewayApiError(403, "forbidden", `Connection is unavailable: ${req.params.connectionId}`);
       }
       const label = requestLabel(req.body);
-      return accessStore.mintConnectionToken({
-        connectionId: req.params.connectionId,
-        context,
-        label,
-        actor: req.gatewayApiAuth?.client.id ?? "api-client",
-        mcpConnectionBaseUrl
-      });
+      try {
+        return accessStore.mintConnectionToken({
+          connectionId: req.params.connectionId,
+          context,
+          label,
+          actor: req.gatewayApiAuth?.client.id ?? "api-client",
+          mcpConnectionBaseUrl
+        });
+      } catch (err) {
+        throw storeErrorToApiError(err);
+      }
     })
   );
 
@@ -321,25 +326,33 @@ export function createGatewayApiRouter({
 
   router.post(
     "/connections/:connectionId/mcp-tokens/:tokenId/rotate",
-    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) =>
-      accessStore.rotateConnectionToken(
-        req.params.connectionId,
-        req.params.tokenId,
-        req.gatewayApiAuth?.client.id ?? "api-client",
-        mcpConnectionBaseUrl
-      )
-    )
+    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) => {
+      try {
+        return accessStore.rotateConnectionToken(
+          req.params.connectionId,
+          req.params.tokenId,
+          req.gatewayApiAuth?.client.id ?? "api-client",
+          mcpConnectionBaseUrl
+        );
+      } catch (err) {
+        throw storeErrorToApiError(err);
+      }
+    })
   );
 
   router.delete(
     "/connections/:connectionId/mcp-tokens/:tokenId",
-    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) => ({
-      token: accessStore.revokeConnectionToken(
-        req.params.connectionId,
-        req.params.tokenId,
-        req.gatewayApiAuth?.client.id ?? "api-client"
-      )
-    }))
+    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) => {
+      try {
+        return { token: accessStore.revokeConnectionToken(
+          req.params.connectionId,
+          req.params.tokenId,
+          req.gatewayApiAuth?.client.id ?? "api-client"
+        )};
+      } catch (err) {
+        throw storeErrorToApiError(err);
+      }
+    })
   );
 
   router.use(
@@ -358,6 +371,15 @@ export function createGatewayApiRouter({
   });
 
   return router;
+}
+
+// Translate AccessStoreError (409 conflict, 404 not-found) to GatewayApiError
+// so token-management endpoints surface correct HTTP status codes.
+function storeErrorToApiError(err: unknown): Error {
+  if (err instanceof AccessStoreError) {
+    return new GatewayApiError(err.statusCode, err.statusCode === 409 ? "invalid_request" : "not_found", err.message);
+  }
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 function requestLabel(body: unknown): string {
