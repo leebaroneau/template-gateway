@@ -3,6 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ApiClient, ApiKey, AuditEvent } from "../admin/types.js";
+import type {
+  ConnectionTokenRecord,
+  CreateConnectionTokenInput,
+  MintedConnectionToken
+} from "./connection-tokens.js";
 import {
   createApiKeySecret,
   fingerprintApiKeySecret,
@@ -77,6 +82,26 @@ interface ApiKeyRow {
   rotated_by: string | null;
   revoked_at: string | null;
   revoked_by: string | null;
+  last_used_at: string | null;
+}
+
+interface ConnectionTokenRow {
+  id: string;
+  connection_id: string;
+  brand_id: string;
+  region_id: string;
+  connector_slug: string;
+  api_key_id: string;
+  client_id: string;
+  label: string;
+  status: string;
+  created_at: string;
+  created_by: string;
+  rotated_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  preview: string;
+  fingerprint: string;
   last_used_at: string | null;
 }
 
@@ -524,6 +549,167 @@ export class GatewayAccessStore {
     return authenticate();
   }
 
+  mintConnectionToken(input: CreateConnectionTokenInput): MintedConnectionToken {
+    const mint = this.db.transaction(() => {
+      this.assertActiveConnectionTokenLabelAvailable(input.connectionId, input.label);
+      const client = this.createClient(
+        {
+          name: `conn:${input.connectionId}:${input.label}`,
+          type: "agent",
+          owner: `connection:${input.connectionId}`,
+          scopes: ["mcp.read"]
+        },
+        input.actor
+      );
+      const created = this.createKey(client.id, { label: input.label }, input.actor);
+      const now = timestamp();
+      const tokenId = generatedId("conntok_");
+      this.db
+        .prepare(
+          `INSERT INTO gateway_connection_tokens (
+             id, connection_id, brand_id, region_id, connector_slug, api_key_id, client_id, label,
+             status, created_at, created_by, rotated_at, revoked_at, revoked_by
+           )
+           VALUES (
+             @id, @connectionId, @brandId, @regionId, @connectorSlug, @apiKeyId, @clientId, @label,
+             'active', @createdAt, @createdBy, NULL, NULL, NULL
+           )`
+        )
+        .run({
+          id: tokenId,
+          connectionId: input.connectionId,
+          brandId: input.context.brandId,
+          regionId: input.context.regionId,
+          connectorSlug: input.context.connectorSlug,
+          apiKeyId: created.key.id,
+          clientId: client.id,
+          label: input.label,
+          createdAt: now,
+          createdBy: input.actor
+        });
+      this.insertAudit({
+        action: "connection_token.created",
+        targetType: "connection_token",
+        targetId: tokenId,
+        detail: `Connection token created: ${input.label}`,
+        actor: input.actor,
+        metadata: {
+          connectionId: input.connectionId,
+          connectorSlug: input.context.connectorSlug,
+          fingerprint: created.key.fingerprint,
+          clientId: client.id,
+          keyId: created.key.id
+        }
+      });
+      const token = this.readConnectionToken(input.connectionId, tokenId);
+      return { token, secret: created.secret, mcpUrl: connectionMcpUrl(input.connectionId, input.mcpConnectionBaseUrl) };
+    });
+
+    return mint();
+  }
+
+  authenticateConnectionToken(
+    connectionId: string,
+    secret: string
+  ): { record: ConnectionTokenRecord; client: ApiClient; key: ApiKey } | undefined {
+    const authenticated = this.authenticate(secret);
+    if (authenticated === undefined) {
+      return undefined;
+    }
+    const row = this.db
+      .prepare(
+        `SELECT t.*, k.preview, k.fingerprint, k.last_used_at
+         FROM gateway_connection_tokens t
+         JOIN gateway_api_keys k ON k.id = t.api_key_id
+         WHERE t.api_key_id = @apiKeyId`
+      )
+      .get({ apiKeyId: authenticated.key.id }) as ConnectionTokenRow | undefined;
+    if (row === undefined || row.connection_id !== connectionId || row.status !== "active") {
+      return undefined;
+    }
+    return { record: this.connectionTokenFromRow(row), client: authenticated.client, key: authenticated.key };
+  }
+
+  rotateConnectionToken(connectionId: string, tokenId: string, actor: string, mcpConnectionBaseUrl?: string): MintedConnectionToken {
+    const rotate = this.db.transaction(() => {
+      const existing = this.readConnectionToken(connectionId, tokenId);
+      const rotated = this.rotateKey(existing.clientId, existing.apiKeyId, actor);
+      this.db
+        .prepare("UPDATE gateway_connection_tokens SET rotated_at = @rotatedAt WHERE id = @id")
+        .run({ id: tokenId, rotatedAt: timestamp() });
+      this.insertAudit({
+        action: "connection_token.rotated",
+        targetType: "connection_token",
+        targetId: tokenId,
+        detail: `Connection token rotated: ${existing.label}`,
+        actor,
+        metadata: {
+          connectionId,
+          connectorSlug: existing.connectorSlug,
+          fingerprint: rotated.key.fingerprint,
+          clientId: existing.clientId,
+          keyId: existing.apiKeyId
+        }
+      });
+      return { token: this.readConnectionToken(connectionId, tokenId), secret: rotated.secret, mcpUrl: connectionMcpUrl(connectionId, mcpConnectionBaseUrl) };
+    });
+
+    return rotate();
+  }
+
+  revokeConnectionToken(connectionId: string, tokenId: string, actor: string): ConnectionTokenRecord {
+    const revoke = this.db.transaction(() => {
+      const existing = this.readConnectionToken(connectionId, tokenId);
+      if (existing.status === "active") {
+        try {
+          this.revokeKey(existing.clientId, existing.apiKeyId, actor);
+        } catch (error) {
+          if (!(error instanceof AccessStoreError) || error.statusCode !== 409) {
+            throw error;
+          }
+        }
+        this.updateClient(existing.clientId, { status: "revoked" }, actor);
+        this.db
+          .prepare(
+            `UPDATE gateway_connection_tokens
+             SET status = 'revoked', revoked_at = COALESCE(revoked_at, @revokedAt), revoked_by = COALESCE(revoked_by, @revokedBy)
+             WHERE id = @id`
+          )
+          .run({ id: tokenId, revokedAt: timestamp(), revokedBy: actor });
+        this.insertAudit({
+          action: "connection_token.revoked",
+          targetType: "connection_token",
+          targetId: tokenId,
+          detail: `Connection token revoked: ${existing.label}`,
+          actor,
+          metadata: {
+            connectionId,
+            connectorSlug: existing.connectorSlug,
+            fingerprint: existing.fingerprint,
+            clientId: existing.clientId,
+            keyId: existing.apiKeyId
+          }
+        });
+      }
+      return this.readConnectionToken(connectionId, tokenId);
+    });
+
+    return revoke();
+  }
+
+  listConnectionTokens(connectionId: string): ConnectionTokenRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.*, k.preview, k.fingerprint, k.last_used_at
+         FROM gateway_connection_tokens t
+         JOIN gateway_api_keys k ON k.id = t.api_key_id
+         WHERE t.connection_id = @connectionId
+         ORDER BY t.created_at ASC, t.id ASC`
+      )
+      .all({ connectionId }) as ConnectionTokenRow[];
+    return rows.map((row) => this.connectionTokenFromRow(row));
+  }
+
   recordUsage(input: RecordApiUsageInput): void {
     const insert = this.db.transaction(() => {
       if (input.scope !== undefined) {
@@ -633,6 +819,29 @@ export class GatewayAccessStore {
         backend TEXT,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS gateway_connection_tokens (
+        id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL,
+        brand_id TEXT NOT NULL,
+        region_id TEXT NOT NULL,
+        connector_slug TEXT NOT NULL,
+        api_key_id TEXT NOT NULL UNIQUE,
+        client_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        rotated_at TEXT,
+        revoked_at TEXT,
+        revoked_by TEXT,
+        FOREIGN KEY(api_key_id) REFERENCES gateway_api_keys(id),
+        FOREIGN KEY(client_id) REFERENCES gateway_api_clients(id)
+      );
+      CREATE INDEX IF NOT EXISTS gateway_connection_tokens_connection_idx
+        ON gateway_connection_tokens(connection_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS gateway_connection_tokens_active_label_unique_idx
+        ON gateway_connection_tokens(connection_id, label)
+        WHERE status = 'active';
     `);
     // Idempotent column addition for existing databases that predate the backend column.
     try {
@@ -715,6 +924,32 @@ export class GatewayAccessStore {
     if (row) {
       throw new AccessStoreError(409, `API key label already exists for client: ${label}`);
     }
+  }
+
+  private assertActiveConnectionTokenLabelAvailable(connectionId: string, label: string): void {
+    const row = this.db
+      .prepare(
+        "SELECT id FROM gateway_connection_tokens WHERE connection_id = @connectionId AND label = @label AND status = 'active'"
+      )
+      .get({ connectionId, label }) as { id: string } | undefined;
+    if (row) {
+      throw new AccessStoreError(409, `Connection token label already exists for connection: ${label}`);
+    }
+  }
+
+  private readConnectionToken(connectionId: string, tokenId: string): ConnectionTokenRecord {
+    const row = this.db
+      .prepare(
+        `SELECT t.*, k.preview, k.fingerprint, k.last_used_at
+         FROM gateway_connection_tokens t
+         JOIN gateway_api_keys k ON k.id = t.api_key_id
+         WHERE t.connection_id = @connectionId AND t.id = @tokenId`
+      )
+      .get({ connectionId, tokenId }) as ConnectionTokenRow | undefined;
+    if (!row) {
+      throw new AccessStoreError(404, `Connection token not found: ${tokenId}`);
+    }
+    return this.connectionTokenFromRow(row);
   }
 
   private readClient(id: string): ApiClient {
@@ -806,6 +1041,29 @@ export class GatewayAccessStore {
     return key;
   }
 
+  private connectionTokenFromRow(row: ConnectionTokenRow): ConnectionTokenRecord {
+    const token: ConnectionTokenRecord = {
+      id: row.id,
+      connectionId: row.connection_id,
+      brandId: row.brand_id,
+      regionId: row.region_id,
+      connectorSlug: row.connector_slug,
+      apiKeyId: row.api_key_id,
+      clientId: row.client_id,
+      label: row.label,
+      preview: row.preview,
+      fingerprint: row.fingerprint,
+      status: row.status === "revoked" ? "revoked" : "active",
+      createdAt: row.created_at,
+      createdBy: row.created_by
+    };
+    if (row.rotated_at !== null) token.rotatedAt = row.rotated_at;
+    if (row.revoked_at !== null) token.revokedAt = row.revoked_at;
+    if (row.revoked_by !== null) token.revokedBy = row.revoked_by;
+    if (row.last_used_at !== null) token.lastUsedAt = row.last_used_at;
+    return token;
+  }
+
   private requestCount24h(clientId: string): number {
     const since = new Date(Date.now() - DAY_IN_MS).toISOString();
     const row = this.db
@@ -845,4 +1103,12 @@ export class GatewayAccessStore {
     }
     return event;
   }
+}
+
+function connectionMcpUrl(connectionId: string, baseUrl?: string): string {
+  const path = `/mcp/v1/connections/${encodeURIComponent(connectionId)}`;
+  if (baseUrl === undefined || baseUrl.trim() === "") {
+    return path;
+  }
+  return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }

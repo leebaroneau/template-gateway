@@ -11,6 +11,7 @@ import type { GatewayConnectionBackend } from "./admin/types.js";
 import { GatewayAccessStore } from "./access/store.js";
 import { createGatewayApiRouter } from "./api/routes.js";
 import { createGatewayMcpV1Router } from "./mcp-v1/routes.js";
+import { createGatewayConnectionMcpRouter } from "./mcp-v1/connection-routes.js";
 import { GoogleOAuthAdapter } from "./google-oauth/adapter.js";
 import { GatewayGoogleStore } from "./google-oauth/store.js";
 import { createGoogleOAuthRouter } from "./google-oauth/routes.js";
@@ -78,7 +79,17 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   });
 
   app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry));
-  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry }));
+  app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry, mcpConnectionBaseUrl: config.mcpConnectionBaseUrl }));
+  app.use(
+    "/mcp/v1/connections/:connectionId",
+    createGatewayConnectionMcpRouter({
+      backend: adminBackend,
+      accessStore,
+      authGateAllowedDomains: config.mcpAuthGateAllowedDomains,
+      authGateAllowedUsers: config.mcpAuthGateAllowedUsers,
+      appInstallStore
+    })
+  );
   app.use(
     "/mcp/v1",
     createGatewayMcpV1Router({

@@ -22,6 +22,7 @@ export interface GatewayConfig {
   haverfordDevApiClientSecret?: string;
   mcpAuthGateAllowedDomains?: string[];
   mcpAuthGateAllowedUsers?: string[];
+  mcpConnectionBaseUrl?: string;
   googleOAuth?: GoogleOAuthConfig;
   shopifyOAuth?: ShopifyOAuthConfig;
 }
@@ -179,6 +180,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     haverfordDevApiClientSecret: optionalEnv(env, "HAVERFORD_DEV_API_CLIENT_SECRET"),
     mcpAuthGateAllowedDomains: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_DOMAINS),
     mcpAuthGateAllowedUsers: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_USERS),
+    mcpConnectionBaseUrl: optionalEnv(env, "MCP_CONNECTION_BASE_URL"),
     googleOAuth: parseGoogleOAuthConfig(env),
     shopifyOAuth: parseShopifyOAuthConfig(env),
   };

@@ -21,6 +21,9 @@ export type AuditAction =
   | "api_key.created"
   | "api_key.rotated"
   | "api_key.revoked"
+  | "connection_token.created"
+  | "connection_token.rotated"
+  | "connection_token.revoked"
   | "api_auth.succeeded"
   | "api_auth.failed"
   | "api_scope.denied"
@@ -31,6 +34,11 @@ export type AuditAction =
   | "mcp_tool.listed"
   | "mcp_tool.called"
   | "mcp_tool.failed"
+  | "connection_mcp_auth.succeeded"
+  | "connection_mcp_auth.failed"
+  | "connection_mcp_tool.listed"
+  | "connection_mcp_tool.called"
+  | "connection_mcp_tool.failed"
   | "oauth_account.created"
   | "oauth_account.updated"
   | "oauth_account.revoked"
@@ -114,7 +122,7 @@ export interface ApiClient {
 export interface AuditEvent {
   id: string;
   action: AuditAction;
-  targetType: "brand" | "region" | "connection" | "api_key" | "api_client" | "oauth_account" | "oauth_account_link";
+  targetType: "brand" | "region" | "connection" | "api_key" | "api_client" | "connection_token" | "oauth_account" | "oauth_account_link";
   targetId: string;
   detail: string;
   timestamp: string;

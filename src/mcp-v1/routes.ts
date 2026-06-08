@@ -161,6 +161,12 @@ function handleToolsList(
   actor: GatewayMcpActor,
   startedAt: number
 ): void {
+  if (isConnectionScopedApiClient(actor)) {
+    recordUsage(options.accessStore, actor, req.method, 403, "mcp.read", startedAt);
+    res.status(403).json({ error: "forbidden", message: "Connection-scoped tokens must use their connection URL" });
+    return;
+  }
+
   const allowed = metadataReadScopes.some((scope) => scopeAllowed(actor.scopes, scope));
   if (!allowed) {
     recordUsage(options.accessStore, actor, req.method, 403, "mcp.read", startedAt);
@@ -193,6 +199,12 @@ async function handleToolCall(
   actor: GatewayMcpActor,
   startedAt: number
 ): Promise<void> {
+  if (isConnectionScopedApiClient(actor)) {
+    recordUsage(options.accessStore, actor, req.method, 403, "mcp.read", startedAt);
+    res.status(403).json({ error: "forbidden", message: "Connection-scoped tokens must use their connection URL" });
+    return;
+  }
+
   const params = parseToolCallParams(request.params);
   if (!params.ok) {
     recordUsage(options.accessStore, actor, req.method, 200, undefined, startedAt);
@@ -217,6 +229,10 @@ async function handleToolCall(
 
 function actorCanCallTool(actor: GatewayMcpActor, granularScope: GatewayApiScope): boolean {
   return scopeAllowed(actor.scopes, "mcp.read") || scopeAllowed(actor.scopes, granularScope);
+}
+
+function isConnectionScopedApiClient(actor: GatewayMcpActor): boolean {
+  return actor.type === "api_client" && actor.authenticated.client.owner.startsWith("connection:");
 }
 
 function parseJsonRpcRequest(body: unknown): { ok: true; value: McpJsonRpcRequest } | { ok: false; message: string } {

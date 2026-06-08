@@ -1,4 +1,5 @@
 import type { AuthenticatedGatewayApiClient, GatewayApiScope } from "../access/types.js";
+import type { GatewayConnectionContext } from "../access/connection-tokens.js";
 
 export interface McpJsonRpcRequest {
   jsonrpc: "2.0";
@@ -29,6 +30,8 @@ export interface GatewayMcpToolResult {
   isError: boolean;
 }
 
+export type ScopedToolMode = "read";
+
 export type GatewayMcpActor =
   | {
       type: "api_client";
@@ -43,5 +46,26 @@ export type GatewayMcpActor =
       actorId: string;
       email: string;
       domain: string;
+      scopes: GatewayApiScope[];
+    };
+
+export type ConnectionMcpActor =
+  | {
+      type: "connection_token";
+      authMethod: "connection_token";
+      actorId: string;
+      context: GatewayConnectionContext;
+      scopes: GatewayApiScope[];
+      tokenId: string;
+      apiKeyId: string;
+      clientId: string;
+    }
+  | {
+      type: "auth_gate";
+      authMethod: "auth_gate";
+      actorId: string;
+      email: string;
+      domain: string;
+      context: GatewayConnectionContext;
       scopes: GatewayApiScope[];
     };
