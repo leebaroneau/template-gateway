@@ -56,7 +56,7 @@ export function normalizeImportApps(manifest: DevApiAppManifest, today: string):
     client: {
       name: app.name,
       type: app.type,
-      owner: `dev-api:${app.owner}`,
+      owner: `dev-api:${app.key}`,
       scopes: validateGatewayApiScopes(app.scopes)
     },
     keyLabel: `${prefix}-${today}`

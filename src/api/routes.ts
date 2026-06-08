@@ -395,7 +395,7 @@ export function createGatewayApiRouter({
         const activeExisting = existingByOwner?.status === "active" ? existingByOwner : undefined;
         if (activeExisting === undefined && (existingByOwner === undefined || !rotate)) {
           try {
-            const client = accessStore.createClient({ ...app.client, owner: `dev-api:${app.manifestKey}` }, actor);
+            const client = accessStore.createClient(app.client, actor);
             const created = accessStore.createKey(client.id, { label: app.keyLabel }, actor);
             imported.push({
               manifestKey: app.manifestKey,
@@ -483,7 +483,9 @@ function importRotate(body: unknown): boolean {
 }
 
 function findImportClient(apiClients: ApiClient[], manifestKey: string): ApiClient | undefined {
-  return apiClients.find((client) => client.owner === `dev-api:${manifestKey}`);
+  const matches = apiClients.filter((client) => client.owner === `dev-api:${manifestKey}`);
+  // Prefer active over revoked — there can be multiple if a prior import was revoked and re-imported.
+  return matches.find((c) => c.status === "active") ?? matches[0];
 }
 
 function uniqueImportKeyLabel(baseLabel: string, client: ApiClient): string {
