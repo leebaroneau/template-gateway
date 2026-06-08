@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response } from "express";
 import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayAppInstallStore } from "../apps/store.js";
+import type { ConnectorAdapterRegistry } from "../connectors/registry.js";
 import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
@@ -111,7 +112,8 @@ function entityTypeFromParam(value: string): GatewayEntityType {
 export function createAdminRouter(
   backend: GatewayConnectionBackend = new FixtureGatewayBackend(),
   accessStore?: GatewayAccessStore,
-  appInstallStore?: GatewayAppInstallStore
+  appInstallStore?: GatewayAppInstallStore,
+  connectorRegistry?: ConnectorAdapterRegistry
 ): express.Router {
   const router = express.Router();
 
@@ -268,6 +270,59 @@ export function createAdminRouter(
       const body = requestBodyObject(req.body);
       const state = await backend.resetEntity({ entityType: body.entityType, entityId: body.entityId });
       res.json({ state: await snapshotForResponse(state) });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/api/connectors/all", async (_req: Request, res: Response) => {
+    try {
+      const store = requireAccessStore(accessStore);
+      // Return all connectors (from the full merged catalog) with their enabled status
+      // and the resolved backend adapter that would serve each connector.
+      // The snapshot only includes enabled connectors; this endpoint shows the full library.
+      const { mapDevApiBrandsToGatewayState } = await import("./dev-api-mapper.js");
+      const allConnectors = mapDevApiBrandsToGatewayState({ brands: [] }).connectors;
+      const disabledIds = new Set(store.listDisabledConnectors());
+      res.json({
+        connectors: allConnectors.map((c) => {
+          const override = store.getConnectorBackendOverride(c.id);
+          const resolved = connectorRegistry?.resolve(c.slug, override);
+          return {
+            ...c,
+            enabled: !disabledIds.has(c.id),
+            backendOverride: override,
+            resolvedBackend: resolved?.info.backendType ?? null
+          };
+        })
+      });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/api/connectors/:connectorId/toggle", async (req: Request, res: Response) => {
+    try {
+      const store = requireAccessStore(accessStore);
+      const { connectorId } = req.params;
+      const body = requestBodyObject(req.body);
+      const enabled = body.enabled === true || body.enabled === 1;
+      store.setConnectorEnabled(connectorId, enabled);
+      const state = await snapshotForResponse();
+      res.json({ state });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/api/connectors/:connectorId/set-backend", async (req: Request, res: Response) => {
+    try {
+      const store = requireAccessStore(accessStore);
+      const { connectorId } = req.params;
+      const body = requestBodyObject(req.body);
+      const backend = typeof body.backend === "string" && body.backend.length > 0 ? body.backend : null;
+      store.setConnectorBackendOverride(connectorId, backend);
+      res.json({ connectorId, backendOverride: backend });
     } catch (error) {
       sendError(res, error);
     }

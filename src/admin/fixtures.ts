@@ -145,25 +145,6 @@ export function createInitialGatewayState(): GatewayState {
         scopes: ["deals:read", "persons:read", "activities:read"],
         description: "CRM deals, contacts, activities, and pipeline status."
       },
-      {
-        id: "connector_haverford_dev_api",
-        slug: "haverford-dev-api",
-        name: "Haverford Dev API",
-        category: "internal",
-        authMode: "service_account",
-        backendOptions: ["internal"],
-        requiredFields: [
-          { key: "service", label: "Service", example: "gateway admin read model" },
-          {
-            key: "service_account_token",
-            label: "Service account token",
-            secret: true,
-            example: "stored in provider vault"
-          }
-        ],
-        scopes: ["gateway:read", "gateway:test"],
-        description: "Internal Haverford service integration placeholder."
-      }
     ],
     connections: [
       {
@@ -246,17 +227,6 @@ export function createInitialGatewayState(): GatewayState {
         configSummary: { site_url: "https://koenig.example/au" },
         lastTestedAt: "2026-05-29T02:30:00.000Z"
       },
-      {
-        id: "connection_haverford_au_dev_api",
-        brandId: "brand_haverford",
-        regionId: "region_haverford_au",
-        connectorId: "connector_haverford_dev_api",
-        backendType: "internal",
-        displayName: "Haverford Dev API",
-        status: "connected",
-        configSummary: { service: "gateway-admin", service_account_token_ref: "internal fixture placeholder" },
-        lastTestedAt: "2026-05-29T03:00:00.000Z"
-      }
     ],
     apiClients: [
       {

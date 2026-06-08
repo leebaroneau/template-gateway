@@ -49,7 +49,7 @@ describe("buildAdminBackend", () => {
 
     expect(state.brands).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Haverford" })]));
     expect(state.connections).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "connection_haverford_au_dev_api" })])
+      expect.arrayContaining([expect.objectContaining({ id: "connection_haverford_au_shopify" })])
     );
   });
 

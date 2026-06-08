@@ -260,6 +260,35 @@ tr.is-selected td {
   background: #f2f8fa;
 }
 
+div.record-row.is-selected {
+  background: #e8f4f7;
+  border-left: 3px solid #2a7090;
+  padding-left: 13px;
+}
+
+button.tab {
+  padding: 6px 14px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  background: #fff;
+  font-size: .85rem;
+  cursor: pointer;
+  color: var(--text-muted, #6b7280);
+  transition: background .1s, color .1s;
+}
+
+button.tab:hover {
+  background: #f1f5f9;
+  color: var(--text, #1a202c);
+}
+
+button.tab.is-active {
+  background: #2a7090;
+  border-color: #2a7090;
+  color: #fff;
+  font-weight: 600;
+}
+
 .dense-list {
   display: grid;
   gap: 8px;

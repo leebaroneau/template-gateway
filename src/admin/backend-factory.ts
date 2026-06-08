@@ -1,10 +1,12 @@
 import { DevApiGatewayBackend } from "./dev-api-backend.js";
 import { DevApiBrandsClient } from "./dev-api-client.js";
+import { mapDevApiBrandsToGatewayState } from "./dev-api-mapper.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
 import { OverlayGatewayBackend } from "./overlay-backend.js";
 import { GatewayOverlayStore } from "./overlay-store.js";
-import type { GatewayConnectionBackend } from "./types.js";
+import type { GatewayConnectionBackend, GatewayState } from "./types.js";
 import type { GatewayConfig } from "../config.js";
+import type { GatewayAccessStore } from "../access/store.js";
 
 function requireSetting(value: string | undefined, name: string, dataSource: GatewayConfig["adminDataSource"]): string {
   if (!value) {
@@ -31,7 +33,7 @@ function buildDevApiBackend(config: GatewayConfig): DevApiGatewayBackend {
   );
 }
 
-export function buildAdminBackend(config: GatewayConfig): GatewayConnectionBackend {
+export function buildAdminBackend(config: GatewayConfig, accessStore?: GatewayAccessStore): GatewayConnectionBackend {
   if (config.adminDataSource === "fixture") {
     return new FixtureGatewayBackend();
   }
@@ -46,6 +48,36 @@ export function buildAdminBackend(config: GatewayConfig): GatewayConnectionBacke
       store: new GatewayOverlayStore(config.gatewayStorePath),
       sourceLabel: "Fixture backend",
       sourceType: "fixture"
+    });
+  }
+
+  if (config.adminDataSource === "gateway-store") {
+    // Serves data exclusively from the gateway SQLite overlay store.
+    // Connector catalog uses the merged (fixture + mapper) definitions, filtered by
+    // per-deployment enable/disable settings stored in gateway_connector_settings.
+    const allConnectors = mapDevApiBrandsToGatewayState({ brands: [] }).connectors;
+    const emptyCatalogBackend: GatewayConnectionBackend = {
+      ...new FixtureGatewayBackend(),
+      // Re-evaluate the enabled filter on EVERY snapshot so runtime toggles
+      // (enable/disable a connector) take effect without a restart.
+      snapshot: async (): Promise<GatewayState> => ({
+        brands: [],
+        regions: [],
+        connections: [],
+        connectors: accessStore
+          ? allConnectors.filter((c) => accessStore.isConnectorEnabled(c.id))
+          : allConnectors,
+        apiClients: [],
+        auditEvents: [],
+        entityMeta: [],
+      }),
+    } as GatewayConnectionBackend;
+
+    return new OverlayGatewayBackend({
+      source: emptyCatalogBackend,
+      store: new GatewayOverlayStore(config.gatewayStorePath),
+      sourceLabel: "Gateway store",
+      sourceType: "gateway",
     });
   }
 

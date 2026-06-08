@@ -2,10 +2,10 @@ import "dotenv/config";
 import type { GoogleOAuthConfig } from "./google-oauth/adapter.js";
 import type { ShopifyOAuthConfig } from "./shopify-oauth/adapter.js";
 
-export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-api-overlay";
+export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-api-overlay" | "gateway-store";
 
 export interface GatewayConfig {
-  composioApiKey: string;
+  composioApiKey?: string;
   composioProjectId?: string;
   composioAdapterSlugs?: string[];
   nangoAdapterSlugs?: string[];
@@ -99,11 +99,12 @@ function parseAdminDataSource(raw?: string): AdminDataSource {
     value === "fixture" ||
     value === "dev-api" ||
     value === "fixture-overlay" ||
-    value === "dev-api-overlay"
+    value === "dev-api-overlay" ||
+    value === "gateway-store"
   ) {
     return value;
   }
-  throw new Error(`ADMIN_DATA_SOURCE must be fixture, dev-api, fixture-overlay, or dev-api-overlay (got ${raw})`);
+  throw new Error(`ADMIN_DATA_SOURCE must be fixture, dev-api, fixture-overlay, dev-api-overlay, or gateway-store (got ${raw})`);
 }
 
 function parseGatewayStorePath(env: NodeJS.ProcessEnv, dataSource: AdminDataSource): string {
@@ -161,7 +162,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const adminDataSource = parseAdminDataSource(env.ADMIN_DATA_SOURCE);
 
   return {
-    composioApiKey: requireEnv(env, "COMPOSIO_API_KEY"),
+    composioApiKey: optionalEnv(env, "COMPOSIO_API_KEY"),
     composioProjectId: optionalEnv(env, "COMPOSIO_PROJECT_ID"),
     composioAdapterSlugs: parseCommaList(optionalEnv(env, "COMPOSIO_ADAPTER_SUPPORTED_SLUGS")),
     nangoAdapterSlugs: parseCommaList(optionalEnv(env, "NANGO_ADAPTER_SUPPORTED_SLUGS")),

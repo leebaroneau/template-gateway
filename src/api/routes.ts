@@ -236,7 +236,7 @@ export function createGatewayApiRouter({
       "/connectors/:slug/capabilities",
       ...gatewayApiRead(accessStore, "connectors.read", (req) => {
         const { slug } = req.params;
-        const adapter = connectorRegistry.get(slug);
+        const adapter = connectorRegistry.resolve(slug);
         if (adapter === undefined) {
           throw new GatewayApiError(404, "not_found", `No adapter registered for connector: ${slug}`);
         }

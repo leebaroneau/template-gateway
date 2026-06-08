@@ -28,17 +28,19 @@ interface CreateAppOptions {
 }
 
 export function createApp(config = loadConfig(), options: CreateAppOptions = {}) {
-  const factory = makeComposioSessionFactory({
-    composioApiKey: config.composioApiKey,
-    composioProjectId: config.composioProjectId,
-    toolkitAllowlist: config.toolkitAllowlist,
-    authConfigs: config.authConfigs
-  });
-  const cache = new SessionCache(factory, { ttlSeconds: config.sessionTtlSeconds });
+  const factory = config.composioApiKey
+    ? makeComposioSessionFactory({
+        composioApiKey: config.composioApiKey,
+        composioProjectId: config.composioProjectId,
+        toolkitAllowlist: config.toolkitAllowlist,
+        authConfigs: config.authConfigs
+      })
+    : undefined;
+  const cache = factory ? new SessionCache(factory, { ttlSeconds: config.sessionTtlSeconds }) : undefined;
   const app = express();
   app.disable("x-powered-by");
-  const adminBackend = options.adminBackend ?? buildAdminBackend(config);
   const accessStore = options.accessStore ?? new GatewayAccessStore(config.gatewayStorePath);
+  const adminBackend = options.adminBackend ?? buildAdminBackend(config, accessStore);
   const googleStore = config.googleOAuth ? new GatewayGoogleStore(config.gatewayStorePath) : undefined;
   const googleAdapter = config.googleOAuth && googleStore
     ? new GoogleOAuthAdapter(config.googleOAuth, googleStore)
@@ -50,26 +52,29 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   const appInstallStore = new GatewayAppInstallStore(config.gatewayStorePath);
 
   const connectorRegistry = new ConnectorAdapterRegistry();
-  connectorRegistry.register(new ComposioConnectorAdapter({
-    apiKey: config.composioApiKey,
-    supportedSlugs: config.composioAdapterSlugs
-  }));
+  // Register in priority order: first-registered = highest priority in resolution chain.
+  // Nango (self-hosted, data-sovereign) is preferred over Composio (SaaS fallback).
+  // Native OAuth adapters (Google, Shopify) will be prepended here in a future phase.
   connectorRegistry.register(new NangoConnectorAdapter({
     secretKey: process.env.NANGO_SECRET_KEY,
     publicKey: process.env.NANGO_PUBLIC_KEY,
     supportedSlugs: config.nangoAdapterSlugs
+  }));
+  connectorRegistry.register(new ComposioConnectorAdapter({
+    apiKey: config.composioApiKey ?? "",
+    supportedSlugs: config.composioAdapterSlugs
   }));
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
       status: "ok",
       brand: config.brandSlug,
-      cachedSessions: cache.size(),
-      toolkitAllowlist: config.toolkitAllowlist ?? "<all toolkits the API key can see>"
+      cachedSessions: cache?.size() ?? 0,
+      composioEnabled: !!config.composioApiKey
     });
   });
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore));
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry }));
   app.use(
     "/mcp/v1",
@@ -102,20 +107,22 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     })
   );
 
-  const mcpRouter = express.Router();
-  mcpRouter.use(express.json({ limit: "1mb" }));
-  mcpRouter.use(bearerAuth(config.gatewayBearer));
-  mcpRouter.use(actorContext(config.brandSlug));
+  if (cache) {
+    const mcpRouter = express.Router();
+    mcpRouter.use(express.json({ limit: "1mb" }));
+    mcpRouter.use(bearerAuth(config.gatewayBearer));
+    mcpRouter.use(actorContext(config.brandSlug));
 
-  const mcpHandler = (req: Request, res: Response) => forwardJsonRpc(req, res, { cache });
-  mcpRouter.post("/", mcpHandler);
-  mcpRouter.delete("/", mcpHandler);
+    const mcpHandler = (req: Request, res: Response) => forwardJsonRpc(req, res, { cache });
+    mcpRouter.post("/", mcpHandler);
+    mcpRouter.delete("/", mcpHandler);
 
-  // GET is SSE in MCP streamable HTTP. Composio Tool Router decides whether to
-  // upgrade; we forward as-is. forwardJsonRpc handles the empty body for GET.
-  mcpRouter.get("/", mcpHandler);
+    // GET is SSE in MCP streamable HTTP. Composio Tool Router decides whether to
+    // upgrade; we forward as-is. forwardJsonRpc handles the empty body for GET.
+    mcpRouter.get("/", mcpHandler);
 
-  app.use("/mcp", mcpRouter);
+    app.use("/mcp", mcpRouter);
+  }
 
   app.use((err: Error, _req: Request, res: Response, _next: express.NextFunction) => {
     // eslint-disable-next-line no-console

@@ -19,6 +19,7 @@ function adminClientApp() {
     selectedConnectionId: string | null;
     secretReveal: SecretReveal | null;
     appInstalls?: Item[];
+    allConnectors?: Item[];
   };
 
   const root = document.getElementById("app-root") as HTMLElement | null;
@@ -37,6 +38,7 @@ function adminClientApp() {
     "regions.read",
     "connectors.read",
     "connections.read",
+    "mcp.read",
     "api_clients.read",
     "api_clients.write",
     "audit.read",
@@ -287,7 +289,7 @@ function adminClientApp() {
         const region = byId("regions", connection.regionId);
         const isSelected = connection.id === uiState.selectedConnectionId;
         return `<tr class="${isSelected ? "is-selected" : ""}">
-          <td><strong>${h(connection.displayName)}</strong><div class="small muted">${h(connection.id)}</div></td>
+          <td><strong>${h(connection.displayName)}</strong></td>
           <td>${h(connector?.name ?? connection.connectorId)}</td>
           <td>${h(region?.code ?? connection.regionId)}</td>
           <td>${h(connection.backendType)}</td>
@@ -325,7 +327,16 @@ function adminClientApp() {
     const connections = collection("connections");
     const activeKeys = collection("apiClients").flatMap((client) => client.keys ?? []).filter((key) => key.status === "active");
     const issueCount = connections.filter((connection) => ["error", "needs_reconnect", "needs_config"].includes(connection.status)).length;
-    return `${viewHeader("Overview", "Fixture-backed operational view for the unified gateway prototype.", `<span class="badge info">Fixture backend</span>`)}
+    const meta = collection("entityMeta");
+    const firstSource = meta.length > 0 ? String((meta[0] as Item).source ?? "") : "";
+    const backendLabel = firstSource === "gateway" ? "Gateway store" : firstSource === "dev_api" ? "Dev API" : "Fixture";
+    const backendBadgeClass = firstSource === "gateway" ? "success" : firstSource === "dev_api" ? "info" : "info";
+    const subtitle = firstSource === "gateway"
+      ? "Live data from the gateway SQLite store. Seeded from Haverford Dev API."
+      : firstSource === "dev_api"
+      ? "Live data from Haverford Dev API."
+      : "Fixture-backed local data.";
+    return `${viewHeader("Overview", subtitle, `<span class="badge ${backendBadgeClass}">${h(backendLabel)}</span>`)}
       <div class="metrics-grid">
         ${metric("Brands", brands.length)}
         ${metric("Regions", regions.length)}
@@ -345,14 +356,23 @@ function adminClientApp() {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Source</th><th>Action</th></tr></thead>
-              <tbody>${connectionRows(connections.slice(0, 8))}</tbody>
+              <thead><tr><th>Name</th><th>Connector</th><th>Rgn</th><th>Status</th></tr></thead>
+              <tbody>${connections.slice(0, 8).map((connection) => {
+                const connector = connectorFor(connection);
+                const region = byId("regions", connection.regionId);
+                return `<tr>
+                  <td><strong>${h(connection.displayName)}</strong></td>
+                  <td class="small">${h(connector?.name ?? connection.connectorId)}</td>
+                  <td class="small">${h(region?.code ?? connection.regionId)}</td>
+                  <td>${statusBadge(connection.status)}</td>
+                </tr>`;
+              }).join("")}</tbody>
             </table>
           </div>
         </section>
         <section class="panel">
           <div class="panel-header">
-            <div><h3>Audit</h3><p>Latest fixture events.</p></div>
+            <div><h3>Audit</h3><p>Latest events.</p></div>
           </div>
           <div class="table-wrap">
             <table>
@@ -499,11 +519,11 @@ function adminClientApp() {
     return collection("brands")
       .map((brand) => {
         const regions = brandRegions(brand.id);
-        return `<div class="record-row">
+        const isSelected = brand.id === uiState.selectedBrandId;
+        return `<div class="record-row ${isSelected ? "is-selected" : ""}" style="cursor:pointer" data-action="select-brand" data-brand-id="${h(brand.id)}">
           <div>
             <strong>${h(brand.name)}</strong>
-            <div class="small muted">${h(brand.slug)} - ${regions.length} region${regions.length === 1 ? "" : "s"}</div>
-            ${sourceBadge("brand", brand.id)}
+            <div class="small muted">${h(brand.slug)} · ${regions.length} region${regions.length === 1 ? "" : "s"}</div>
           </div>
           ${statusBadge(brand.status)}
         </div>`;
@@ -517,14 +537,16 @@ function adminClientApp() {
     }
     return regions
       .map(
-        (region) => `<div class="record-row">
-          <div>
-            <strong>${h(region.name)}</strong>
-            <div class="small muted">${h(region.code)}${region.domain ? ` - ${h(region.domain)}` : ""}</div>
-            ${sourceBadge("region", region.id)}
-          </div>
-          ${statusBadge(region.status)}
-        </div>`
+        (region) => {
+          const isSelected = region.id === uiState.selectedRegionId;
+          return `<div class="record-row ${isSelected ? "is-selected" : ""}" style="cursor:pointer" data-action="select-region" data-region-id="${h(region.id)}">
+            <div>
+              <strong>${h(region.name)}</strong>
+              <div class="small muted">${h(region.code)}${region.domain ? ` · ${h(region.domain)}` : ""}</div>
+            </div>
+            ${statusBadge(region.status)}
+          </div>`;
+        }
       )
       .join("");
   }
@@ -584,104 +606,146 @@ function adminClientApp() {
   }
 
   function renderBrands(): string {
+    const allBrands = collection("brands");
+    const allRegions = collection("regions");
     const selectedBrand = byId("brands", uiState.selectedBrandId);
     const regions = brandRegions(uiState.selectedBrandId);
     const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
     const selectedConnection = selectedConnectionForRegion(connections);
-    return `${viewHeader("Brands", "Manage brand and region entities for the fixture gateway.")}
+
+    // Region tabs: AU | NZ | SG | UK | + Add
+    const regionTabs = regions.map((region) => {
+      const isActive = region.id === uiState.selectedRegionId;
+      return `<button class="tab${isActive ? " is-active" : ""}" type="button" data-action="select-region" data-region-id="${h(region.id)}">${h(region.code)}</button>`;
+    }).join("");
+
+    // Right panel — only shown when a brand is selected
+    const rightPanel = !selectedBrand
+      ? `<section class="panel"><div class="empty-panel muted" style="padding:40px;text-align:center">Select a brand to manage its regions and connections.</div></section>`
+      : `<section class="panel">
+          <!-- Brand header with inline edit -->
+          <div class="panel-header">
+            <div><h3>${h(selectedBrand.name)}</h3><p class="small muted">${h(selectedBrand.slug)}</p></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${statusBadge(selectedBrand.status)}
+              <details>
+                <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted,#6b7280);list-style:none;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff">Edit</summary>
+                <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                  <form data-action="update-brand" data-brand-id="${h(selectedBrand.id)}" class="form-grid">
+                    <label>Name<input name="name" required value="${h(selectedBrand.name)}"></label>
+                    <label>Status<select name="status">${valueOptions(["active", "disabled"], selectedBrand.status)}</select></label>
+                    <div class="button-row span-2"><button class="btn btn-primary" type="submit">Save brand</button>${resetButton("brand", selectedBrand.id)}</div>
+                  </form>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <!-- Region tabs + add region -->
+          <div style="display:flex;align-items:center;gap:4px;padding:10px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);flex-wrap:wrap">
+            ${regionTabs}
+            <details style="margin-left:4px">
+              <summary style="cursor:pointer;padding:5px 10px;border-radius:6px;border:1px dashed var(--border);font-size:.82rem;color:var(--text-muted,#6b7280);list-style:none;white-space:nowrap">＋ Add region</summary>
+              <div style="position:absolute;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:280px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                <form data-action="create-region" class="form-grid">
+                  <label>Code<input name="code" required placeholder="AU"></label>
+                  <label>Name<input name="name" required placeholder="Australia"></label>
+                  <label class="span-2">Domain<input name="domain" placeholder="brand.example"></label>
+                  <div class="button-row span-2"><button class="btn btn-primary" type="submit">Add region</button></div>
+                </form>
+              </div>
+            </details>
+          </div>
+
+          <!-- Region meta strip: domain info + Edit region + Add connection -->
+          ${selectedRegion ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--bg-subtle,#f9fafb)">
+            <span class="small muted">${h(selectedRegion.name)}${selectedRegion.domain ? ` · ${h(selectedRegion.domain)}` : ""}</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <details>
+                <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted,#6b7280);list-style:none;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff">Edit region</summary>
+                <div style="position:absolute;right:120px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                  ${renderRegionEditor(selectedRegion)}
+                </div>
+              </details>
+              <details>
+                <summary style="cursor:pointer;font-size:.8rem;color:#fff;list-style:none;padding:4px 10px;border-radius:4px;background:#2a7090;border:1px solid #2a7090">＋ Add connection</summary>
+                <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:360px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
+                  ${renderConnectorSetup()}
+                </div>
+              </details>
+            </div>
+          </div>` : ""}
+
+          <!-- Connections table -->
+          ${selectedRegion ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Connection</th><th>Connector</th><th>Backend</th><th>Status</th><th></th></tr></thead>
+              <tbody>${connectionRows(connections)}</tbody>
+            </table>
+          </div>
+          ${selectedConnection ? `<div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>` : ""}
+          ` : `<div class="empty-panel muted" style="padding:24px 16px">Select a region tab to view its connections.</div>`}
+
+        </section>`;
+
+    return `${viewHeader("Brands", `${allBrands.length} brands, ${allRegions.length} regions.`)}
       <div class="grid-wide">
         <section class="panel">
-          <div class="panel-header"><div><h3>Brands</h3><p>${collection("brands").length} configured.</p></div></div>
+          <div class="panel-header"><div><h3>Brands</h3><p>${allBrands.length} configured.</p></div></div>
           <div class="dense-list">${renderBrandList()}</div>
+          <details style="border-top:1px solid var(--border)">
+            <summary style="padding:10px 16px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#6b7280);list-style:none">＋ New brand</summary>
+            <form data-action="create-brand" class="form-grid" style="padding:0 16px 16px">
+              <label>Name<input name="name" required placeholder="New brand"></label>
+              <label>Slug<input name="slug" placeholder="new-brand"></label>
+              <div class="button-row span-2"><button class="btn btn-primary" type="submit">Add brand</button></div>
+            </form>
+          </details>
         </section>
         <div class="workspace">
-          ${renderBrandEditor(selectedBrand)}
-          <section class="panel">
-            <div class="form-grid">
-              <form data-action="create-brand" class="form-grid span-2">
-                <label>
-                  Brand name
-                  <input name="name" required placeholder="New brand">
-                </label>
-                <label>
-                  Slug
-                  <input name="slug" placeholder="new-brand">
-                </label>
-                <div class="button-row span-2">
-                  <button class="btn btn-primary" type="submit">Add brand</button>
-                </div>
-              </form>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-header">
-              <div><h3>Regions</h3><p>${selectedBrand ? h(selectedBrand.name) : "No brand selected"}</p></div>
-              <select data-control="brand" aria-label="Selected brand">${optionsFor(collection("brands"), uiState.selectedBrandId)}</select>
-            </div>
-            ${renderRegionEditor(selectedRegion)}
-            <div class="dense-list">${renderRegionList(regions)}</div>
-            <form data-action="create-region" class="form-grid">
-              <label>
-                Code
-                <input name="code" required placeholder="AU">
-              </label>
-              <label>
-                Name
-                <input name="name" required placeholder="Australia">
-              </label>
-              <label class="span-2">
-                Domain
-                <input name="domain" placeholder="brand.example">
-              </label>
-              <div class="button-row span-2">
-                <button class="btn btn-primary" type="submit" ${selectedBrand ? "" : "disabled"}>Add region</button>
-              </div>
-            </form>
-          </section>
-          <section class="panel">
-            <div class="panel-header">
-              <div><h3>Regional connections</h3><p>${selectedRegion ? h(selectedRegion.name) : "No region selected"}</p></div>
-              <div class="select-pair">
-                <select data-control="region" aria-label="Selected region">${optionsFor(regions, uiState.selectedRegionId, "code")}</select>
-                <select data-control="connection" aria-label="Selected connection">${optionsFor(connections, uiState.selectedConnectionId, "displayName")}</select>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Name</th><th>Connector</th><th>Region</th><th>Backend</th><th>Status</th><th>Source</th><th>Action</th></tr></thead>
-                <tbody>${connectionRows(connections)}</tbody>
-              </table>
-            </div>
-            <div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>
-          </section>
-          ${renderConnectorSetup()}
+          ${rightPanel}
         </div>
       </div>`;
   }
 
   function renderConnectors(): string {
-    const rows = collection("connectors")
+    const allConnectors = (uiState.allConnectors ?? collection("connectors").map((c) => ({ ...c, enabled: true }))) as Item[];
+    const enabledCount = allConnectors.filter((c) => c.enabled !== false).length;
+    const rows = allConnectors
       .map(
-        (connector) => `<tr>
-          <td><strong>${h(connector.name)}</strong><div class="small muted">${h(connector.slug)}</div></td>
-          <td>${h(connector.category)}</td>
-          <td>${statusBadge(connector.authMode)}</td>
-          <td>${chips((connector.backendOptions ?? []) as unknown[])}</td>
-          <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
-          <td>${chips((connector.scopes ?? []) as unknown[])}</td>
-        </tr>`
+        (connector) => {
+          const enabled = connector.enabled !== false;
+          return `<tr style="${enabled ? "" : "opacity:.5"}">
+            <td><strong>${h(connector.name)}</strong><div class="small muted">${h(connector.slug)}</div></td>
+            <td>${h(connector.category)}</td>
+            <td>${statusBadge(connector.authMode)}</td>
+            <td>${chips((connector.backendOptions ?? []) as unknown[])}</td>
+            <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
+            <td><button class="btn btn-sm" type="button" data-action="toggle-connector" data-connector-id="${h(connector.id)}" data-enabled="${enabled ? "1" : "0"}">${enabled ? "Disable" : "Enable"}</button></td>
+          </tr>`;
+        }
       )
       .join("");
-    return `${viewHeader("Connectors", "Supported fixture connector catalog and setup contract.")}
+    return `${viewHeader("Connectors", `${enabledCount} of ${allConnectors.length} connectors enabled for this deployment.`)}
       <section class="panel">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th><th>Scopes</th></tr></thead>
+            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
       </section>`;
+  }
+
+  async function refreshConnectorsState(): Promise<void> {
+    try {
+      const result = await requestJson("/admin/api/connectors/all");
+      (uiState as Record<string, unknown>).allConnectors = result.connectors;
+    } catch {
+      // falls back to state.connectors (enabled only) if endpoint unavailable
+    }
   }
 
   function apiAccessAuditEvents(): Item[] {
@@ -854,7 +918,7 @@ function adminClientApp() {
   }
 
   function renderAudit(): string {
-    return `${viewHeader("Audit", "Fixture audit trail for admin actions.")}
+    return `${viewHeader("Audit", "Admin and MCP access events, connection tests, and key lifecycle.")}
       <section class="panel">
         <div class="table-wrap">
           <table>
@@ -885,14 +949,14 @@ function adminClientApp() {
             </tr>`
           )
           .join("")
-      : `<tr><td colspan="4" class="muted">No app installs found. Use POST /api/v1/app-installs/provision to auto-provision.</td></tr>`;
+      : `<tr><td colspan="4" class="muted">No installs yet. <button class="btn btn-sm" type="button" data-action="provision-apps">Provision installs</button></td></tr>`;
 
     return `${viewHeader("Apps", "Installed app catalog entries across brands.")}
       <section class="panel">
         <div class="panel-header">
           <div>
-            <h3>haverford-storefront</h3>
-            <p>The Haverford unified storefront app. Connects Shopify storefronts with Cin7 inventory and the Gateway routing layer.</p>
+            <h3>Haverford Storefront</h3>
+            <p>Storefront intelligence for a Haverford brand region powered by a connected Shopify store.</p>
           </div>
         </div>
         <div class="meta-grid">
@@ -1104,6 +1168,18 @@ function adminClientApp() {
   async function handleButton(button: HTMLElement): Promise<void> {
     clearError();
     const action = button.dataset.action;
+    if (action === "select-brand" && button.dataset.brandId) {
+      selectBrand(button.dataset.brandId);
+      render();
+      return;
+    }
+    if (action === "select-region" && button.dataset.regionId) {
+      uiState.selectedRegionId = button.dataset.regionId;
+      uiState.selectedConnectionId = null;
+      selectedConnectionForRegion(regionConnections(button.dataset.regionId));
+      render();
+      return;
+    }
     if (action === "select-connection" && button.dataset.connectionId) {
       uiState.selectedConnectionId = button.dataset.connectionId;
       render();
@@ -1174,6 +1250,20 @@ function adminClientApp() {
       await refreshAppsState();
       return;
     }
+    if (action === "toggle-connector" && button.dataset.connectorId) {
+      const enabling = button.dataset.enabled === "0";
+      await postJson(`/admin/api/connectors/${encodeURIComponent(button.dataset.connectorId)}/toggle`, { enabled: enabling });
+      const state = await requestJson("/admin/api/state");
+      applyState(state);
+      await refreshConnectorsState();
+      render();
+      return;
+    }
+    if (action === "provision-apps") {
+      await postJson("/api/v1/app-installs/provision", {});
+      await refreshAppsState();
+      return;
+    }
     if (action === "shopify-connect") {
       const shop = prompt("Enter shop domain (e.g. brand.myshopify.com):");
       if (!shop || !shop.trim()) {
@@ -1192,10 +1282,13 @@ function adminClientApp() {
       if (viewButton.dataset.view === "apps") {
         void refreshAppsState().catch((error: unknown) => showError(error instanceof Error ? error.message : String(error)));
       }
+      if (viewButton.dataset.view === "connectors") {
+        void refreshConnectorsState().catch(() => { /* falls back to state.connectors */ });
+      }
       render();
       return;
     }
-    const actionButton = target?.closest<HTMLElement>("button[data-action]");
+    const actionButton = target?.closest<HTMLElement>("[data-action]");
     if (actionButton) {
       void handleButton(actionButton).catch((error: unknown) => showError(error instanceof Error ? error.message : String(error)));
     }

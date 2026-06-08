@@ -39,9 +39,7 @@ describe("loadConfig", () => {
     }
   });
 
-  it("requires the three core env vars", () => {
-    expect(() => loadConfig()).toThrow(/COMPOSIO_API_KEY/);
-    process.env.COMPOSIO_API_KEY = "ak_test";
+  it("requires the two core env vars", () => {
     expect(() => loadConfig()).toThrow(/BRAND_SLUG/);
     process.env.BRAND_SLUG = "genvest";
     expect(() => loadConfig()).toThrow(/GATEWAY_BEARER/);
