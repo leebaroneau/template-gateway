@@ -168,7 +168,8 @@ export class GoogleOAuthAdapter {
 
   async refreshTokenIfNeeded(
     credentialId: string,
-    fetchFn: typeof fetch = fetch
+    fetchFn: typeof fetch = fetch,
+    accountStore?: GatewayAccountStore
   ): Promise<boolean> {
     const credential = this.store.getCredential(credentialId);
     if (!credential) {
@@ -184,6 +185,12 @@ export class GoogleOAuthAdapter {
 
     if (expiryMs - nowMs > REFRESH_THRESHOLD_SECONDS * 1000) {
       return false;
+    }
+
+    // Account-linked credentials: route through account-level refresh which
+    // fan-outs the new access token to all sibling connection credentials.
+    if (credential.accountId && accountStore) {
+      return this.refreshAccountTokenIfNeeded(credential.accountId, accountStore, fetchFn);
     }
 
     let tokenPayload: GoogleTokenPayload;

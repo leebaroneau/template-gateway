@@ -184,7 +184,7 @@ export function createGoogleOAuthRouter(
     }
 
     try {
-      const refreshed = await adapter.refreshTokenIfNeeded(req.params.id);
+      const refreshed = await adapter.refreshTokenIfNeeded(req.params.id, fetch, accountStore);
       const updated = store.getCredential(req.params.id);
       const credential = updated ? stripEncryptedPayload(updated) : null;
       res.json({ refreshed, credential });

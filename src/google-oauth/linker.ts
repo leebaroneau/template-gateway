@@ -126,14 +126,8 @@ export class GoogleAccountLinker {
 
     for (const entry of targets) {
       try {
-        const linkId = this.accountStore.linkAccount({
-          accountId,
-          brandId: entry.brandId,
-          regionId: entry.regionId,
-          connectorSlug: entry.connectorSlug,
-          connectionId: entry.connectionId
-        });
-
+        // Provision BEFORE committing the link so a transient token-mint
+        // failure doesn't orphan a link as already_linked with no credential.
         const credentialId = await this.adapter.provisionConnectionCredential(
           {
             accountId,
@@ -147,6 +141,14 @@ export class GoogleAccountLinker {
           fetchFn,
           this.accountStore
         );
+
+        const linkId = this.accountStore.linkAccount({
+          accountId,
+          brandId: entry.brandId,
+          regionId: entry.regionId,
+          connectorSlug: entry.connectorSlug,
+          connectionId: entry.connectionId
+        });
 
         this.accountStore.setLinkConnectionId(linkId, entry.connectionId);
 
