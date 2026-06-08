@@ -1,5 +1,7 @@
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
+import type { ApiClient } from "../admin/types.js";
+import { normalizeImportApps, validateAppImportManifest } from "../access/app-import.js";
 import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayApiScope } from "../access/types.js";
 import { scopeAllowed } from "../access/types.js";
@@ -24,6 +26,10 @@ export interface CreateGatewayApiRouterOptions {
 }
 
 type GatewayApiReadHandler = (req: Request) => Promise<unknown> | unknown;
+interface GatewayApiHandlerResponse {
+  statusCode: number;
+  body: unknown;
+}
 
 function notFound(entityName: string, entityId: string): GatewayApiError {
   return new GatewayApiError(404, "not_found", `${entityName} not found: ${entityId}`);
@@ -73,6 +79,16 @@ function recordApiRead(
   });
 }
 
+function isGatewayApiHandlerResponse(value: unknown): value is GatewayApiHandlerResponse {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { statusCode?: unknown }).statusCode === "number" &&
+    Object.prototype.hasOwnProperty.call(value, "body")
+  );
+}
+
 function assertGatewayApiScope(req: Request, accessStore: GatewayAccessStore, requiredScope?: GatewayApiScope): void {
   const authenticated = req.gatewayApiAuth;
   if (authenticated === undefined) {
@@ -109,9 +125,11 @@ function gatewayApiRead(
       const startedAt = Date.now();
       try {
         assertGatewayApiScope(req, accessStore, requiredScope);
-        const body = await handler(req);
-        recordApiRead(accessStore, req, 200, readDurationMs(startedAt), true);
-        res.json(body);
+        const result = await handler(req);
+        const statusCode = isGatewayApiHandlerResponse(result) ? result.statusCode : 200;
+        const body = isGatewayApiHandlerResponse(result) ? result.body : result;
+        recordApiRead(accessStore, req, statusCode, readDurationMs(startedAt), true);
+        res.status(statusCode).json(body);
       } catch (error) {
         const statusCode = error instanceof GatewayApiError ? error.statusCode : 500;
         try {
@@ -355,6 +373,81 @@ export function createGatewayApiRouter({
     })
   );
 
+  router.post(
+    "/api-clients/import",
+    ...gatewayApiWrite(accessStore, "api_clients.write", async (req) => {
+      let manifest;
+      try {
+        manifest = validateAppImportManifest(req.body);
+      } catch (err) {
+        throw new GatewayApiError(400, "invalid_request", err instanceof Error ? err.message : String(err));
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const apps = normalizeImportApps(manifest, today);
+      const imported = [];
+      const skipped = [];
+      const rotate = importRotate(req.body);
+      const actor = req.gatewayApiAuth?.client.id ?? "api-client";
+
+      for (const app of apps) {
+        const existingByOwner = findImportClient(accessStore.listApiClients(), app.manifestKey);
+        const activeExisting = existingByOwner?.status === "active" ? existingByOwner : undefined;
+        if (activeExisting === undefined && (existingByOwner === undefined || !rotate)) {
+          try {
+            const client = accessStore.createClient(app.client, actor);
+            const created = accessStore.createKey(client.id, { label: app.keyLabel }, actor);
+            imported.push({
+              manifestKey: app.manifestKey,
+              client,
+              key: created.key,
+              secret: created.secret,
+              action: "created"
+            });
+          } catch (err) {
+            throw storeErrorToApiError(err);
+          }
+          continue;
+        }
+
+        if (!rotate) {
+          skipped.push({ manifestKey: app.manifestKey, reason: "exists" });
+          continue;
+        }
+
+        try {
+          const existing = existingByOwner ?? activeExisting;
+          if (existing === undefined) {
+            throw new AccessStoreError(404, `API client not found for manifest key: ${app.manifestKey}`);
+          }
+          const created = accessStore.createKey(existing.id, { label: uniqueImportKeyLabel(app.keyLabel, existing) }, actor);
+          imported.push({
+            manifestKey: app.manifestKey,
+            client: existing,
+            key: created.key,
+            secret: created.secret,
+            action: "rotated"
+          });
+        } catch (err) {
+          throw storeErrorToApiError(err);
+        }
+      }
+
+      return { statusCode: 201, body: { imported, skipped } };
+    })
+  );
+
+  router.get(
+    "/api-clients",
+    ...gatewayApiRead(accessStore, "api_clients.read", (req) => {
+      const ownerPrefix = typeof req.query.owner_prefix === "string" ? req.query.owner_prefix : undefined;
+      const apiClients = accessStore
+        .listApiClients()
+        .filter((client) => ownerPrefix === undefined || client.owner.startsWith(ownerPrefix));
+      return { apiClients };
+    })
+  );
+
   router.use(
     "*",
     ...gatewayApiRead(accessStore, undefined, (req) => {
@@ -380,6 +473,31 @@ function storeErrorToApiError(err: unknown): Error {
     return new GatewayApiError(err.statusCode, err.statusCode === 409 ? "invalid_request" : "not_found", err.message);
   }
   return err instanceof Error ? err : new Error(String(err));
+}
+
+function importRotate(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return false;
+  }
+  return (body as { rotate?: unknown }).rotate === true;
+}
+
+function findImportClient(apiClients: ApiClient[], manifestKey: string): ApiClient | undefined {
+  const matches = apiClients.filter((client) => client.owner === `dev-api:${manifestKey}`);
+  // Prefer active over revoked — there can be multiple if a prior import was revoked and re-imported.
+  return matches.find((c) => c.status === "active") ?? matches[0];
+}
+
+function uniqueImportKeyLabel(baseLabel: string, client: ApiClient): string {
+  const activeLabels = new Set(client.keys.filter((key) => key.status === "active").map((key) => key.label));
+  if (!activeLabels.has(baseLabel)) {
+    return baseLabel;
+  }
+  let suffix = 2;
+  while (activeLabels.has(`${baseLabel}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseLabel}-${suffix}`;
 }
 
 function requestLabel(body: unknown): string {
