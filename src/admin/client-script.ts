@@ -1445,11 +1445,106 @@ function adminClientApp() {
       uiState.drawer.connectionId = result.connection?.id ?? connectionId;
       render();
     }
+    if (action === "drawer-save-step1") {
+      const { drawer } = uiState;
+      const connection = drawer.connectionId ? byId("connections", drawer.connectionId) : undefined;
+      const connector = drawer.pendingConnectorId
+        ? byId("connectors", drawer.pendingConnectorId)
+        : connection ? connectorFor(connection) : collection("connectors")[0];
+      const authMode = String(connector?.authMode ?? "none");
+
+      if (drawer.mode === "edit" && drawer.connectionId) {
+        const configFields: Record<string, string> = {};
+        const requiredFields = ((connector?.requiredFields ?? []) as Item[]).filter((f) => !f.secret);
+        for (const f of requiredFields) {
+          const val = field(form, `config_${String(f.key)}`);
+          if (val) configFields[String(f.key)] = val;
+        }
+        const result = await patchJson(`/admin/api/connections/${encodeURIComponent(drawer.connectionId)}`, {
+          displayName: field(form, "displayName"),
+          backendType: field(form, "backendType"),
+          configSummary: { ...((connection?.configSummary as Record<string, string>) ?? {}), ...configFields }
+        });
+        applyState(result.state);
+        uiState.drawer.connectionId = result.connection?.id ?? drawer.connectionId;
+      } else if (drawer.mode === "add") {
+        if (authMode !== "oauth") {
+          const selectedRegion = byId("regions", uiState.selectedRegionId);
+          if (!uiState.selectedBrandId || !selectedRegion) {
+            throw new Error("Select a brand and region before adding a connection.");
+          }
+          const configFields: Record<string, string> = {};
+          const requiredFields = ((connector?.requiredFields ?? []) as Item[]).filter((f) => !f.secret);
+          for (const f of requiredFields) {
+            const val = field(form, `config_${String(f.key)}`);
+            if (val) configFields[String(f.key)] = val;
+          }
+          const result = await postJson(`/admin/api/regions/${encodeURIComponent(selectedRegion.id)}/connections`, {
+            brandId: uiState.selectedBrandId,
+            connectorId: field(form, "connectorId") ?? drawer.pendingConnectorId,
+            backendType: field(form, "backendType"),
+            displayName: field(form, "displayName"),
+            configSummary: configFields
+          });
+          applyState(result.state);
+          uiState.drawer.connectionId = result.connection?.id ?? null;
+          uiState.drawer.mode = "edit";
+        }
+      }
+
+      drawer.step = authMode === "none" ? 3 : 2;
+      if (drawer.step === 3 && drawer.connectionId) {
+        void triggerDrawerTest(drawer.connectionId);
+      }
+      render();
+      return;
+    }
+    if (action === "drawer-save-step2") {
+      const { drawer } = uiState;
+      if (drawer.connectionId) {
+        const connection = byId("connections", drawer.connectionId);
+        const connector = connection ? connectorFor(connection) : undefined;
+        const secretFields = ((connector?.requiredFields ?? []) as Item[]).filter((f) => f.secret);
+        const configUpdate: Record<string, string> = {};
+        for (const f of secretFields) {
+          const val = field(form, `config_${String(f.key)}`);
+          if (val) configUpdate[String(f.key)] = val;
+        }
+        if (Object.keys(configUpdate).length > 0) {
+          const result = await patchJson(`/admin/api/connections/${encodeURIComponent(drawer.connectionId)}`, {
+            configSummary: { ...((connection?.configSummary as Record<string, string>) ?? {}), ...configUpdate }
+          });
+          applyState(result.state);
+        }
+      }
+      drawer.step = 3;
+      if (drawer.connectionId) {
+        void triggerDrawerTest(drawer.connectionId);
+      }
+      render();
+      return;
+    }
   }
 
-  // Stub — implemented in Task 6
   async function triggerDrawerTest(connectionId: string): Promise<void> {
-    void connectionId;
+    uiState.drawer.testState = "running";
+    uiState.drawer.testDetail = null;
+    render();
+    try {
+      const result = await postJson(`/admin/api/connections/${encodeURIComponent(connectionId)}/test`);
+      applyState(result.state);
+      const connection = byId("connections", connectionId);
+      uiState.drawer.testState = connection?.status === "connected" ? "passed" : "failed";
+      uiState.drawer.testDetail = connection?.status === "connected"
+        ? `Status: connected · tested ${connection?.lastTestedAt ? formatDate(connection.lastTestedAt) : "just now"}`
+        : connection?.lastError
+          ? String(connection.lastError)
+          : "Test did not return a connected status.";
+    } catch (err) {
+      uiState.drawer.testState = "failed";
+      uiState.drawer.testDetail = err instanceof Error ? err.message : String(err);
+    }
+    render();
   }
 
   async function handleButton(button: HTMLElement): Promise<void> {
@@ -1551,6 +1646,15 @@ function adminClientApp() {
       if (response.redirectUrl) {
         window.location.href = response.redirectUrl as string;
       }
+      return;
+    }
+    if (action === "drawer-test" && button.dataset.connectionId) {
+      void triggerDrawerTest(button.dataset.connectionId);
+      return;
+    }
+    if (action === "drawer-save") {
+      uiState.drawer.open = false;
+      render();
       return;
     }
     if (action === "test-connection" && button.dataset.connectionId) {
