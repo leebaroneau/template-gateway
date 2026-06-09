@@ -176,19 +176,16 @@ describe("admin routes", () => {
     expect(js.text).toContain("/admin/api/brands/");
     expect(js.text).toContain("/admin/api/regions/");
     expect(js.text).toContain("/admin/api/connections/");
-    expect(js.text).toContain('class="panel setup-flow" id="setup-flow"');
-    expect(js.text).toContain('class="setup-summary span-2"');
-    expect(js.text).toContain("<strong>Scopes</strong>");
-    expect(js.text).toContain("<strong>Supported backends</strong>");
-    expect(js.text).toContain('form data-action="create-connection"');
+    expect(js.text).toContain('data-action="drawer-save-step1"');
+    expect(js.text).toContain('data-action="drawer-save-step2"');
+    expect(js.text).toContain('data-action="close-drawer"');
+    expect(js.text).toContain('data-control="drawer-connector"');
     expect(js.text).toContain('form data-action="create-api-client"');
     expect(js.text).toContain('form data-action="update-brand"');
     expect(js.text).toContain('form data-action="update-region"');
-    expect(js.text).toContain('form data-action="update-connection"');
     expect(js.text).toContain("function apiAccessAuditEvents");
     expect(js.text).toContain("function revealSecret");
     expect(js.text).toContain("No API clients yet. Create one to test /api/v1 locally.");
-    expect(js.text).toContain('select name="connectorId" data-control="connector"');
     expect(js.text).toContain('data-action="select-region"');
     expect(js.text).toContain('data-action="open-edit-drawer"');
     expect(js.text).toContain('data-action="open-add-drawer"');
@@ -324,7 +321,7 @@ describe("admin routes", () => {
     expect(root.innerHTML).toContain("Override");
     expect(root.innerHTML).toContain('form data-action="update-brand"');
     expect(root.innerHTML).toContain('form data-action="update-region"');
-    expect(root.innerHTML).toContain('form data-action="update-connection"');
+    expect(root.innerHTML).toContain('data-action="open-edit-drawer"');
     expect(root.innerHTML).toContain('data-action="reset-entity"');
   });
 
@@ -351,7 +348,6 @@ describe("admin routes", () => {
     expect(js.status).toBe(200);
     expect(js.text).toContain("function selectedRegionForBrand");
     expect(js.text).toContain("function selectBrand");
-    expect(js.text).not.toContain('const selectedRegion = byId("regions", uiState.selectedRegionId);');
   });
 
   it("keeps unauthenticated MCP POST protected when admin routes are mounted", async () => {

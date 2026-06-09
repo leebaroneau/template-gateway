@@ -267,10 +267,10 @@ function adminClientApp() {
     const state = await requestJson("/admin/api/state");
     applyState(state);
     // Restore drawer state if returning from OAuth redirect
-    const drawerReturn = sessionStorage.getItem("drawerReturn");
-    if (drawerReturn) {
+    const drawerReturnRaw = typeof sessionStorage !== "undefined" ? sessionStorage.getItem("drawerReturn") : null;
+    if (drawerReturnRaw) {
       try {
-        const saved = JSON.parse(drawerReturn) as Partial<DrawerState>;
+        const saved = JSON.parse(drawerReturnRaw) as Partial<DrawerState>;
         sessionStorage.removeItem("drawerReturn");
         uiState.drawer = {
           open: true,
