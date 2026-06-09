@@ -800,8 +800,75 @@ function adminClientApp() {
   }
 
   function renderDrawerStep3(connection: Item | undefined): string {
-    // Implemented in Task 4
-    return `<div class="wizard-body"><div class="small muted">Test & Save — coming soon.</div></div>`;
+    const { drawer } = uiState;
+    const connector = connection ? connectorFor(connection) : undefined;
+
+    const testPanel = (() => {
+      switch (drawer.testState) {
+        case "running":
+          return `<div class="test-result test-result--running">
+            <span style="display:inline-block;animation:spin 1s linear infinite">⟳</span>
+            Testing connection…
+          </div>`;
+        case "passed":
+          return `<div class="test-result test-result--passed">
+            <strong>✓ Connection test passed</strong>
+            ${drawer.testDetail ? `<div style="margin-top:4px;font-size:.8rem">${h(drawer.testDetail)}</div>` : ""}
+          </div>`;
+        case "failed":
+          return `<div class="test-result test-result--failed">
+            <strong>✗ Connection test failed</strong>
+            ${drawer.testDetail ? `<div style="margin-top:4px;font-size:.8rem">${h(drawer.testDetail)}</div>` : ""}
+          </div>`;
+        default:
+          return drawer.mode === "add"
+            ? `<div class="test-result test-result--running">Test will run after saving.</div>`
+            : `<div class="test-result test-result--running">Ready to test.</div>`;
+      }
+    })();
+
+    const summary = connection
+      ? `<div style="background:var(--panel-soft);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:.85rem">
+           <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)">
+             <span style="color:var(--muted)">Connection</span>
+             <strong>${h(connection.displayName)}</strong>
+           </div>
+           <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)">
+             <span style="color:var(--muted)">Connector</span>
+             <span>${h(connector?.name ?? connection.connectorId)}</span>
+           </div>
+           <div style="display:flex;justify-content:space-between;padding:3px 0">
+             <span style="color:var(--muted)">Status</span>
+             ${statusBadge(connection.status)}
+           </div>
+         </div>`
+      : "";
+
+    const saveBtn = drawer.testState === "failed"
+      ? `<button class="btn" type="button" data-action="drawer-save"
+                 style="background:var(--warning);color:#fff;border-color:var(--warning)"
+                 title="Connection will be saved with status needs_reconnect">
+           Save anyway
+         </button>`
+      : `<button class="btn btn-primary" type="button" data-action="drawer-save">Save connection</button>`;
+
+    const retestBtn = connection && drawer.mode === "edit"
+      ? `<button class="btn" type="button" data-action="drawer-test"
+                 data-connection-id="${h(connection.id)}"
+                 ${drawer.testState === "running" ? "disabled" : ""}>
+           ${drawer.testState === "failed" ? "Retry test" : "Run test"}
+         </button>`
+      : "";
+
+    return `<div class="wizard-body">
+      ${testPanel}
+      ${summary}
+      <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
+        ${saveBtn}
+        ${retestBtn}
+        <button class="btn" type="button" data-action="drawer-back">← Back</button>
+      </div>
+    </div>`;
   }
 
   function renderBrands(): string {
