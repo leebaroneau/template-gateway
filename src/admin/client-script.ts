@@ -663,14 +663,7 @@ function adminClientApp() {
                value="${h(connection?.displayName ?? "")}"
                placeholder="${h(connector?.name ?? "New connection")}">
       </div>
-      <div class="wizard-field">
-        <label>Backend type</label>
-        <select name="backendType">
-          ${backendOptions.map((b) =>
-            `<option value="${h(b)}" ${b === (connection?.backendType ?? backendOptions[0]) ? "selected" : ""}>${h(b)}</option>`
-          ).join("")}
-        </select>
-      </div>
+      <input type="hidden" name="backendType" value="${h(connection?.backendType ?? backendOptions[0] ?? "native")}">
       ${fields}
     </form>`;
   }
@@ -698,9 +691,9 @@ function adminClientApp() {
       // Determine OAuth start URL per connector slug
       const slug = String(connector?.slug ?? "");
       const oauthStartPath = slug.startsWith("google")
-        ? "/admin/google-oauth/account/start"
+        ? "/oauth/google/account/start"
         : slug === "shopify"
-          ? "/admin/shopify-oauth/start"
+          ? "/oauth/shopify/start"
           : null;
 
       const authoriseBtn = oauthStartPath
@@ -1661,7 +1654,7 @@ function adminClientApp() {
       if (!shop || !shop.trim()) {
         return;
       }
-      await postJson("/admin/shopify-oauth/install", { shop: shop.trim() });
+      await postJson("/oauth/shopify/install", { shop: shop.trim() });
       await refreshAppsState();
     }
   }

@@ -15,7 +15,7 @@ const BEARER = "test-bearer";
 const GOOGLE_CONFIG = {
   clientId: "test-client.apps.googleusercontent.com",
   clientSecret: "test-secret",
-  redirectUri: "http://localhost:3000/admin/google-oauth/callback",
+  redirectUri: "http://localhost:3000/oauth/google/callback",
   encryptionKey: TEST_KEY
 };
 
@@ -44,27 +44,27 @@ function openStore(): GatewayGoogleStore {
 function buildApp(store: GatewayGoogleStore): express.Express {
   const adapter = new GoogleOAuthAdapter(GOOGLE_CONFIG, store);
   const app = express();
-  app.use("/admin/google-oauth", createGoogleOAuthRouter({ config: GOOGLE_CONFIG, adapter, store, bearer: BEARER }));
+  app.use("/oauth/google", createGoogleOAuthRouter({ config: GOOGLE_CONFIG, adapter, store, bearer: BEARER }));
   return app;
 }
 
 function buildDisabledApp(): express.Express {
   const app = express();
-  app.use("/admin/google-oauth", createGoogleOAuthRouter({ config: undefined, adapter: undefined, store: undefined, bearer: BEARER }));
+  app.use("/oauth/google", createGoogleOAuthRouter({ config: undefined, adapter: undefined, store: undefined, bearer: BEARER }));
   return app;
 }
 
-describe("GET /admin/google-oauth/credentials", () => {
+describe("GET /oauth/google/credentials", () => {
   it("returns 401 without auth", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).get("/admin/google-oauth/credentials");
+    const res = await supertest(app).get("/oauth/google/credentials");
     expect(res.status).toBe(401);
   });
 
   it("returns empty array when no credentials exist", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .get("/admin/google-oauth/credentials")
+      .get("/oauth/google/credentials")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.credentials).toEqual([]);
@@ -82,7 +82,7 @@ describe("GET /admin/google-oauth/credentials", () => {
       status: "connected"
     });
     const res = await supertest(app)
-      .get("/admin/google-oauth/credentials")
+      .get("/oauth/google/credentials")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.credentials).toHaveLength(1);
@@ -91,11 +91,11 @@ describe("GET /admin/google-oauth/credentials", () => {
   });
 });
 
-describe("POST /admin/google-oauth/start", () => {
+describe("POST /oauth/google/start", () => {
   it("returns 400 when products is missing", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .post("/admin/google-oauth/start")
+      .post("/oauth/google/start")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ brandId: "b", regionId: "r", bindings: [] });
     expect(res.status).toBe(400);
@@ -104,7 +104,7 @@ describe("POST /admin/google-oauth/start", () => {
   it("returns 400 for unknown product", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .post("/admin/google-oauth/start")
+      .post("/oauth/google/start")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ brandId: "b", regionId: "r", products: ["bad_product"], bindings: [] });
     expect(res.status).toBe(400);
@@ -113,7 +113,7 @@ describe("POST /admin/google-oauth/start", () => {
   it("returns redirectUrl and state for valid input", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .post("/admin/google-oauth/start")
+      .post("/oauth/google/start")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({
         brandId: "brand_haverford",
@@ -127,16 +127,16 @@ describe("POST /admin/google-oauth/start", () => {
   });
 });
 
-describe("GET /admin/google-oauth/callback", () => {
+describe("GET /oauth/google/callback", () => {
   it("returns 400 when state is missing", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).get("/admin/google-oauth/callback?code=abc");
+    const res = await supertest(app).get("/oauth/google/callback?code=abc");
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when state is invalid", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).get("/admin/google-oauth/callback?code=abc&state=badstate");
+    const res = await supertest(app).get("/oauth/google/callback?code=abc&state=badstate");
     expect(res.status).toBe(400);
   });
 
@@ -168,7 +168,7 @@ describe("GET /admin/google-oauth/callback", () => {
     );
 
     const app = buildApp(store);
-    const res = await supertest(app).get(`/admin/google-oauth/callback?code=auth_code&state=${state}`);
+    const res = await supertest(app).get(`/oauth/google/callback?code=auth_code&state=${state}`);
     expect(res.status).toBe(200);
     expect(res.body.credential.googleAccountEmail).toBe("admin@example.com");
     expect(res.body.credential).not.toHaveProperty("encryptedPayload");
@@ -176,11 +176,11 @@ describe("GET /admin/google-oauth/callback", () => {
   });
 });
 
-describe("DELETE /admin/google-oauth/credentials/:id", () => {
+describe("DELETE /oauth/google/credentials/:id", () => {
   it("returns 404 for unknown credential", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .delete("/admin/google-oauth/credentials/nonexistent")
+      .delete("/oauth/google/credentials/nonexistent")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(404);
   });
@@ -196,7 +196,7 @@ describe("DELETE /admin/google-oauth/credentials/:id", () => {
       status: "connected"
     });
     const res = await supertest(app)
-      .delete(`/admin/google-oauth/credentials/${credId}`)
+      .delete(`/oauth/google/credentials/${credId}`)
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(store.getCredential(credId)).toBeUndefined();
@@ -207,10 +207,10 @@ describe("501 when Google OAuth not configured", () => {
   it("returns 501 on all routes", async () => {
     const app = buildDisabledApp();
     const routes = [
-      ["GET", "/admin/google-oauth/credentials"],
-      ["POST", "/admin/google-oauth/start"],
-      ["GET", "/admin/google-oauth/callback"],
-      ["DELETE", "/admin/google-oauth/credentials/any_id"]
+      ["GET", "/oauth/google/credentials"],
+      ["POST", "/oauth/google/start"],
+      ["GET", "/oauth/google/callback"],
+      ["DELETE", "/oauth/google/credentials/any_id"]
     ] as const;
     for (const [method, url] of routes) {
       const res = await (supertest(app) as any)[method.toLowerCase()](url)

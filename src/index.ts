@@ -106,7 +106,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     : undefined;
 
   app.use(
-    "/admin/google-oauth",
+    "/oauth/google",
     createGoogleOAuthRouter({
       config: config.googleOAuth,
       adapter: googleAdapter,
@@ -119,7 +119,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
   );
 
   app.use(
-    "/admin/shopify-oauth",
+    "/oauth/shopify",
     createShopifyOAuthRouter({
       config: config.shopifyOAuth,
       adapter: shopifyAdapter,

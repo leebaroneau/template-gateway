@@ -10,7 +10,7 @@ const TEST_KEY = Buffer.alloc(32, 0x42).toString("base64url");
 const GOOGLE_CONFIG = {
   clientId: "test-client-id.apps.googleusercontent.com",
   clientSecret: "test-client-secret",
-  redirectUri: "http://localhost:3000/admin/google-oauth/callback",
+  redirectUri: "http://localhost:3000/oauth/google/callback",
   encryptionKey: TEST_KEY
 };
 

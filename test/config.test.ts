@@ -228,13 +228,13 @@ describe("loadConfig", () => {
       process.env.GATEWAY_BEARER = "bearer_test";
       process.env.GOOGLE_OAUTH_CLIENT_ID = "client_id.apps.googleusercontent.com";
       process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client_secret";
-      process.env.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:3000/admin/google-oauth/callback";
+      process.env.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:3000/oauth/google/callback";
       process.env.GOOGLE_OAUTH_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString("base64url");
       const config = loadConfig();
       expect(config.googleOAuth).toMatchObject({
         clientId: "client_id.apps.googleusercontent.com",
         clientSecret: "client_secret",
-        redirectUri: "http://localhost:3000/admin/google-oauth/callback"
+        redirectUri: "http://localhost:3000/oauth/google/callback"
       });
       delete process.env.GOOGLE_OAUTH_CLIENT_ID;
       delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;

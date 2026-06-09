@@ -47,7 +47,7 @@ function buildApp(store: GatewayShopifyStore): express.Express {
   const adapter = new ShopifyOAuthAdapter(SHOPIFY_CONFIG, store);
   const app = express();
   app.use(
-    "/admin/shopify-oauth",
+    "/oauth/shopify",
     createShopifyOAuthRouter({ config: SHOPIFY_CONFIG, adapter, store, bearer: BEARER })
   );
   return app;
@@ -56,7 +56,7 @@ function buildApp(store: GatewayShopifyStore): express.Express {
 function buildDisabledApp(): express.Express {
   const app = express();
   app.use(
-    "/admin/shopify-oauth",
+    "/oauth/shopify",
     createShopifyOAuthRouter({
       config: undefined,
       adapter: undefined,
@@ -89,30 +89,30 @@ function computeWebhookHmac(body: string, secret: string): string {
 describe("Bearer authentication", () => {
   it("GET /credentials without auth → 401", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).get("/admin/shopify-oauth/credentials");
+    const res = await supertest(app).get("/oauth/shopify/credentials");
     expect(res.status).toBe(401);
   });
 
   it("POST /install without auth → 401", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).post("/admin/shopify-oauth/install").send({ shop: TEST_SHOP });
+    const res = await supertest(app).post("/oauth/shopify/install").send({ shop: TEST_SHOP });
     expect(res.status).toBe(401);
   });
 
   it("DELETE /credentials/x without auth → 401", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).delete("/admin/shopify-oauth/credentials/x");
+    const res = await supertest(app).delete("/oauth/shopify/credentials/x");
     expect(res.status).toBe(401);
   });
 });
 
 // ── B) POST /install ─────────────────────────────────────────────────────────
 
-describe("POST /admin/shopify-oauth/install", () => {
+describe("POST /oauth/shopify/install", () => {
   it("returns redirectUrl and state for a valid shop", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/install")
+      .post("/oauth/shopify/install")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ shop: TEST_SHOP });
     expect(res.status).toBe(200);
@@ -130,7 +130,7 @@ describe("POST /admin/shopify-oauth/install", () => {
   it("returns 400 for an invalid shop domain", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/install")
+      .post("/oauth/shopify/install")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ shop: "evil.com" });
     expect(res.status).toBe(400);
@@ -140,7 +140,7 @@ describe("POST /admin/shopify-oauth/install", () => {
   it("returns 400 when shop is missing", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/install")
+      .post("/oauth/shopify/install")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({});
     expect(res.status).toBe(400);
@@ -150,11 +150,11 @@ describe("POST /admin/shopify-oauth/install", () => {
 
 // ── C) GET /callback ─────────────────────────────────────────────────────────
 
-describe("GET /admin/shopify-oauth/callback", () => {
+describe("GET /oauth/shopify/callback", () => {
   it("returns 400 invalid_hmac for a wrong hmac param", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app).get(
-      `/admin/shopify-oauth/callback?shop=${TEST_SHOP}&code=abc&state=somestate&hmac=deadbeef`
+      `/oauth/shopify/callback?shop=${TEST_SHOP}&code=abc&state=somestate&hmac=deadbeef`
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_hmac");
@@ -171,7 +171,7 @@ describe("GET /admin/shopify-oauth/callback", () => {
     };
     const hmac = computeCallbackHmac(baseParams, SHOPIFY_CONFIG.apiSecret);
     const qs = new URLSearchParams({ ...baseParams, hmac }).toString();
-    const res = await supertest(app).get(`/admin/shopify-oauth/callback?${qs}`);
+    const res = await supertest(app).get(`/oauth/shopify/callback?${qs}`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_state");
   });
@@ -204,7 +204,7 @@ describe("GET /admin/shopify-oauth/callback", () => {
 
     const app = buildApp(store);
     const qs = new URLSearchParams({ ...baseParams, hmac }).toString();
-    const res = await supertest(app).get(`/admin/shopify-oauth/callback?${qs}`);
+    const res = await supertest(app).get(`/oauth/shopify/callback?${qs}`);
     expect(res.status).toBe(200);
     expect(res.body.credential).toBeDefined();
     expect(res.body.credential.shop).toBe(TEST_SHOP);
@@ -214,7 +214,7 @@ describe("GET /admin/shopify-oauth/callback", () => {
 
   it("returns 400 when missing required callback parameters", async () => {
     const app = buildApp(openStore());
-    const res = await supertest(app).get(`/admin/shopify-oauth/callback?shop=${TEST_SHOP}`);
+    const res = await supertest(app).get(`/oauth/shopify/callback?shop=${TEST_SHOP}`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_request");
   });
@@ -222,11 +222,11 @@ describe("GET /admin/shopify-oauth/callback", () => {
 
 // ── D) GET /credentials and GET /credentials/:id ─────────────────────────────
 
-describe("GET /admin/shopify-oauth/credentials", () => {
+describe("GET /oauth/shopify/credentials", () => {
   it("returns empty array when no credentials exist", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .get("/admin/shopify-oauth/credentials")
+      .get("/oauth/shopify/credentials")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.credentials).toEqual([]);
@@ -242,7 +242,7 @@ describe("GET /admin/shopify-oauth/credentials", () => {
     });
     const app = buildApp(store);
     const res = await supertest(app)
-      .get("/admin/shopify-oauth/credentials")
+      .get("/oauth/shopify/credentials")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.credentials).toHaveLength(1);
@@ -251,11 +251,11 @@ describe("GET /admin/shopify-oauth/credentials", () => {
   });
 });
 
-describe("GET /admin/shopify-oauth/credentials/:id", () => {
+describe("GET /oauth/shopify/credentials/:id", () => {
   it("returns 404 for an unknown id", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .get("/admin/shopify-oauth/credentials/unknown_id")
+      .get("/oauth/shopify/credentials/unknown_id")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
@@ -271,7 +271,7 @@ describe("GET /admin/shopify-oauth/credentials/:id", () => {
     });
     const app = buildApp(store);
     const res = await supertest(app)
-      .get(`/admin/shopify-oauth/credentials/${id}`)
+      .get(`/oauth/shopify/credentials/${id}`)
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.credential.id).toBe(id);
@@ -282,11 +282,11 @@ describe("GET /admin/shopify-oauth/credentials/:id", () => {
 
 // ── E) DELETE /credentials/:id ───────────────────────────────────────────────
 
-describe("DELETE /admin/shopify-oauth/credentials/:id", () => {
+describe("DELETE /oauth/shopify/credentials/:id", () => {
   it("returns 404 for unknown id", async () => {
     const app = buildApp(openStore());
     const res = await supertest(app)
-      .delete("/admin/shopify-oauth/credentials/unknown_id")
+      .delete("/oauth/shopify/credentials/unknown_id")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
@@ -327,7 +327,7 @@ describe("DELETE /admin/shopify-oauth/credentials/:id", () => {
     const credId = result.credential.id;
     const app = buildApp(store);
     const res = await supertest(app)
-      .delete(`/admin/shopify-oauth/credentials/${credId}`)
+      .delete(`/oauth/shopify/credentials/${credId}`)
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.deleted).toBe(true);
@@ -338,7 +338,7 @@ describe("DELETE /admin/shopify-oauth/credentials/:id", () => {
 
 // ── F) POST /webhooks ─────────────────────────────────────────────────────────
 
-describe("POST /admin/shopify-oauth/webhooks", () => {
+describe("POST /oauth/shopify/webhooks", () => {
   it("returns 200 and sets status to needs_reconnect on app/uninstalled", async () => {
     const store = openStore();
     store.saveCredential({
@@ -353,7 +353,7 @@ describe("POST /admin/shopify-oauth/webhooks", () => {
     const hmac = computeWebhookHmac(payload, SHOPIFY_CONFIG.apiSecret);
 
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/webhooks")
+      .post("/oauth/shopify/webhooks")
       .set("Content-Type", "application/json")
       .set("X-Shopify-Hmac-Sha256", hmac)
       .set("X-Shopify-Topic", "app/uninstalled")
@@ -380,7 +380,7 @@ describe("POST /admin/shopify-oauth/webhooks", () => {
     const hmac = computeWebhookHmac(payload, SHOPIFY_CONFIG.apiSecret);
 
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/webhooks")
+      .post("/oauth/shopify/webhooks")
       .set("Content-Type", "application/json")
       .set("X-Shopify-Hmac-Sha256", hmac)
       .set("X-Shopify-Topic", "shop/redact")
@@ -398,7 +398,7 @@ describe("POST /admin/shopify-oauth/webhooks", () => {
     const hmac = computeWebhookHmac(payload, SHOPIFY_CONFIG.apiSecret);
 
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/webhooks")
+      .post("/oauth/shopify/webhooks")
       .set("Content-Type", "application/json")
       .set("X-Shopify-Hmac-Sha256", hmac)
       .set("X-Shopify-Topic", "customers/data_request")
@@ -414,7 +414,7 @@ describe("POST /admin/shopify-oauth/webhooks", () => {
     const payload = JSON.stringify({});
 
     const res = await supertest(app)
-      .post("/admin/shopify-oauth/webhooks")
+      .post("/oauth/shopify/webhooks")
       .set("Content-Type", "application/json")
       .set("X-Shopify-Hmac-Sha256", "aW52YWxpZA==") // wrong base64 HMAC
       .set("X-Shopify-Topic", "app/uninstalled")
@@ -432,11 +432,11 @@ describe("501 when Shopify OAuth not configured", () => {
   it("returns 501 on all routes", async () => {
     const app = buildDisabledApp();
     const routes = [
-      ["GET", "/admin/shopify-oauth/credentials"],
-      ["POST", "/admin/shopify-oauth/install"],
-      ["GET", "/admin/shopify-oauth/callback"],
-      ["DELETE", "/admin/shopify-oauth/credentials/any_id"],
-      ["POST", "/admin/shopify-oauth/webhooks"],
+      ["GET", "/oauth/shopify/credentials"],
+      ["POST", "/oauth/shopify/install"],
+      ["GET", "/oauth/shopify/callback"],
+      ["DELETE", "/oauth/shopify/credentials/any_id"],
+      ["POST", "/oauth/shopify/webhooks"],
     ] as const;
     for (const [method, url] of routes) {
       const res = await (supertest(app) as ReturnType<typeof supertest>)[

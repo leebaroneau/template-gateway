@@ -20,7 +20,7 @@ const BEARER = "test-bearer";
 const GOOGLE_CONFIG: GoogleOAuthConfig = {
   clientId: "test-client.apps.googleusercontent.com",
   clientSecret: "test-secret",
-  redirectUri: "http://localhost:3000/admin/google-oauth/account/callback",
+  redirectUri: "http://localhost:3000/oauth/google/account/callback",
   encryptionKey: TEST_KEY
 };
 
@@ -142,7 +142,7 @@ function buildApp(
 
   const app = express();
   app.use(
-    "/admin/google-oauth",
+    "/oauth/google",
     createGoogleOAuthRouter({ config: GOOGLE_CONFIG, adapter, store: googleStore, bearer: BEARER, accessStore, accountStore, linker })
   );
 
@@ -165,17 +165,17 @@ function startAccountFlow(googleStore: GatewayGoogleStore): string {
   return state;
 }
 
-describe("POST /admin/google-oauth/account/start", () => {
+describe("POST /oauth/google/account/start", () => {
   it("returns 401 without bearer", async () => {
     const { app } = buildApp();
-    const res = await supertest(app).post("/admin/google-oauth/account/start");
+    const res = await supertest(app).post("/oauth/google/account/start");
     expect(res.status).toBe(401);
   });
 
   it("returns redirectUrl and state with acct_ prefix", async () => {
     const { app } = buildApp();
     const res = await supertest(app)
-      .post("/admin/google-oauth/account/start")
+      .post("/oauth/google/account/start")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.redirectUrl).toContain("accounts.google.com");
@@ -183,13 +183,13 @@ describe("POST /admin/google-oauth/account/start", () => {
   });
 });
 
-describe("GET /admin/google-oauth/account/callback (account flow)", () => {
+describe("GET /oauth/google/account/callback (account flow)", () => {
   it("creates one gateway_oauth_accounts row with no encryptedPayload in response", async () => {
     const { app, accountStore, googleStore } = buildApp([], vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
 
     const res = await supertest(app)
-      .get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+      .get(`/oauth/google/callback?code=authcode&state=${state}`);
     expect(res.status).toBe(200);
     expect(res.body.account).toBeDefined();
     expect(res.body.account.encryptedPayload).toBeUndefined();
@@ -202,12 +202,12 @@ describe("GET /admin/google-oauth/account/callback (account flow)", () => {
 
     const state1 = startAccountFlow(googleStore);
     const r1 = await supertest(app)
-      .get(`/admin/google-oauth/callback?code=authcode&state=${state1}`);
+      .get(`/oauth/google/callback?code=authcode&state=${state1}`);
     const id1 = r1.body.account?.id;
 
     const state2 = startAccountFlow(googleStore);
     const r2 = await supertest(app)
-      .get(`/admin/google-oauth/callback?code=authcode&state=${state2}`);
+      .get(`/oauth/google/callback?code=authcode&state=${state2}`);
     const id2 = r2.body.account?.id;
 
     expect(id1).toBe(id2);
@@ -217,28 +217,28 @@ describe("GET /admin/google-oauth/account/callback (account flow)", () => {
   it("account callback writes NO gateway_google_credentials row", async () => {
     const { app, googleStore } = buildApp([], vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
-    await supertest(app).get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state}`);
     expect(googleStore.listCredentials()).toHaveLength(0);
   });
 
   it("returns 400 for invalid state", async () => {
     const { app } = buildApp();
-    const res = await supertest(app).get("/admin/google-oauth/callback?code=code&state=acct_bad_state");
+    const res = await supertest(app).get("/oauth/google/callback?code=code&state=acct_bad_state");
     expect(res.status).toBe(400);
   });
 });
 
-describe("GET /admin/google-oauth/account/link-plan", () => {
+describe("GET /oauth/google/account/link-plan", () => {
   it("returns 401 without bearer", async () => {
     const { app } = buildApp();
-    const res = await supertest(app).get("/admin/google-oauth/account/link-plan");
+    const res = await supertest(app).get("/oauth/google/account/link-plan");
     expect(res.status).toBe(401);
   });
 
   it("returns 404 when no account exists", async () => {
     const { app } = buildApp();
     const res = await supertest(app)
-      .get("/admin/google-oauth/account/link-plan")
+      .get("/oauth/google/account/link-plan")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(404);
   });
@@ -250,11 +250,11 @@ describe("GET /admin/google-oauth/account/link-plan", () => {
     ];
     const { app, accountStore, googleStore } = buildApp(connections, vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
-    await supertest(app).get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state}`);
     const accountId = accountStore.listAccounts("google")[0].id;
 
     const res = await supertest(app)
-      .get(`/admin/google-oauth/account/link-plan?accountId=${accountId}`)
+      .get(`/oauth/google/account/link-plan?accountId=${accountId}`)
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.counts.proposed).toBe(1);
@@ -265,21 +265,21 @@ describe("GET /admin/google-oauth/account/link-plan", () => {
   it("infers accountId when only one google account exists", async () => {
     const { app, accountStore, googleStore } = buildApp([], vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
-    await supertest(app).get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state}`);
     expect(accountStore.listAccounts("google")).toHaveLength(1);
 
     const res = await supertest(app)
-      .get("/admin/google-oauth/account/link-plan")
+      .get("/oauth/google/account/link-plan")
       .set("Authorization", `Bearer ${BEARER}`);
     expect(res.status).toBe(200);
     expect(res.body.counts).toBeDefined();
   });
 });
 
-describe("POST /admin/google-oauth/account/link", () => {
+describe("POST /oauth/google/account/link", () => {
   it("returns 401 without bearer", async () => {
     const { app } = buildApp();
-    const res = await supertest(app).post("/admin/google-oauth/account/link");
+    const res = await supertest(app).post("/oauth/google/account/link");
     expect(res.status).toBe(401);
   });
 
@@ -291,11 +291,11 @@ describe("POST /admin/google-oauth/account/link", () => {
     ];
     const { app, accountStore, googleStore, accessStore } = buildApp(connections, vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
-    await supertest(app).get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state}`);
     const accountId = accountStore.listAccounts("google")[0].id;
 
     const res = await supertest(app)
-      .post("/admin/google-oauth/account/link")
+      .post("/oauth/google/account/link")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ accountId });
     expect(res.status).toBe(200);
@@ -315,16 +315,16 @@ describe("POST /admin/google-oauth/account/link", () => {
     ];
     const { app, accountStore, googleStore } = buildApp(connections, vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
-    await supertest(app).get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state}`);
     const accountId = accountStore.listAccounts("google")[0].id;
 
     await supertest(app)
-      .post("/admin/google-oauth/account/link")
+      .post("/oauth/google/account/link")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ accountId });
 
     const res2 = await supertest(app)
-      .post("/admin/google-oauth/account/link")
+      .post("/oauth/google/account/link")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ accountId });
     expect(res2.body.linked).toHaveLength(0);
@@ -335,11 +335,11 @@ describe("POST /admin/google-oauth/account/link", () => {
     const conn2 = makeConnection("google-search-console", "brand_hav", "au", { site_url: "https://hav.com" });
     const { app, accountStore, googleStore } = buildApp([conn1, conn2], vi.fn() as unknown as typeof fetch);
     const state = startAccountFlow(googleStore);
-    await supertest(app).get(`/admin/google-oauth/callback?code=authcode&state=${state}`);
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state}`);
     const accountId = accountStore.listAccounts("google")[0].id;
 
     const res = await supertest(app)
-      .post("/admin/google-oauth/account/link")
+      .post("/oauth/google/account/link")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ accountId, connectionIds: [conn1.id] });
     expect(res.status).toBe(200);
@@ -350,7 +350,7 @@ describe("POST /admin/google-oauth/account/link", () => {
   it("returns 404 for unknown accountId", async () => {
     const { app } = buildApp();
     const res = await supertest(app)
-      .post("/admin/google-oauth/account/link")
+      .post("/oauth/google/account/link")
       .set("Authorization", `Bearer ${BEARER}`)
       .send({ accountId: "oauth_acct_notfound" });
     expect(res.status).toBe(404);
@@ -361,10 +361,10 @@ describe("501 when GOOGLE_OAUTH_* unset", () => {
   it("all /account/* routes return 501", async () => {
     const app = express();
     app.use(
-      "/admin/google-oauth",
+      "/oauth/google",
       createGoogleOAuthRouter({ config: undefined, adapter: undefined, store: undefined, bearer: BEARER })
     );
-    for (const path of ["/admin/google-oauth/account/start", "/admin/google-oauth/account/link-plan", "/admin/google-oauth/account/link"]) {
+    for (const path of ["/oauth/google/account/start", "/oauth/google/account/link-plan", "/oauth/google/account/link"]) {
       const method = path.includes("start") || path.includes("link") && !path.includes("link-plan") ? "post" : "get";
       const res = await (method === "post"
         ? supertest(app).post(path).set("Authorization", `Bearer ${BEARER}`)
