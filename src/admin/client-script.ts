@@ -10,16 +10,25 @@ function adminClientApp() {
     fingerprint?: string;
     secret: string;
   };
+  type DrawerState = {
+    open: boolean;
+    mode: "edit" | "add";
+    connectionId: string | null;
+    step: 1 | 2 | 3;
+    testState: "idle" | "running" | "passed" | "failed";
+    testDetail: string | null;
+    pendingConnectorId: string | null;
+  };
   type UiState = {
     data: Item | null;
     view: string;
     selectedBrandId: string | null;
     selectedRegionId: string | null;
     selectedConnectorId: string | null;
-    selectedConnectionId: string | null;
     secretReveal: SecretReveal | null;
     appInstalls?: Item[];
     allConnectors?: Item[];
+    drawer: DrawerState;
   };
 
   const root = document.getElementById("app-root") as HTMLElement | null;
@@ -30,8 +39,16 @@ function adminClientApp() {
     selectedBrandId: null,
     selectedRegionId: null,
     selectedConnectorId: null,
-    selectedConnectionId: null,
-    secretReveal: null
+    secretReveal: null,
+    drawer: {
+      open: false,
+      mode: "edit",
+      connectionId: null,
+      step: 1,
+      testState: "idle",
+      testDetail: null,
+      pendingConnectorId: null
+    }
   };
   const ACCESS_SCOPES = [
     "brands.read",
@@ -179,11 +196,9 @@ function adminClientApp() {
   function selectBrand(brandId: string | null): void {
     if (uiState.selectedBrandId !== brandId) {
       uiState.selectedRegionId = null;
-      uiState.selectedConnectionId = null;
     }
     uiState.selectedBrandId = brandId;
-    const selectedRegion = selectedRegionForBrand(brandRegions(brandId));
-    selectedConnectionForRegion(regionConnections(selectedRegion?.id));
+    selectedRegionForBrand(brandRegions(brandId));
   }
 
   function regionConnections(regionId: unknown): Item[] {
@@ -191,13 +206,7 @@ function adminClientApp() {
   }
 
   function selectedConnectionForRegion(connections: Item[]): Item | undefined {
-    const selectedConnection = connections.find((connection) => connection.id === uiState.selectedConnectionId);
-    if (selectedConnection) {
-      return selectedConnection;
-    }
-    const fallbackConnection = connections[0];
-    uiState.selectedConnectionId = fallbackConnection?.id ?? null;
-    return fallbackConnection;
+    return connections[0];
   }
 
   function ensureSelections(): void {
@@ -206,8 +215,7 @@ function adminClientApp() {
     if (!brands.some((brand) => brand.id === uiState.selectedBrandId)) {
       selectBrand(brands[0]?.id ?? null);
     } else {
-      const selectedRegion = selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
-      selectedConnectionForRegion(regionConnections(selectedRegion?.id));
+      selectedRegionForBrand(brandRegions(uiState.selectedBrandId));
     }
     if (!connectors.some((connector) => connector.id === uiState.selectedConnectorId)) {
       uiState.selectedConnectorId = connectors[0]?.id ?? null;
@@ -287,7 +295,7 @@ function adminClientApp() {
       .map((connection) => {
         const connector = connectorFor(connection);
         const region = byId("regions", connection.regionId);
-        const isSelected = connection.id === uiState.selectedConnectionId;
+        const isSelected = connection.id === uiState.drawer.connectionId;
         return `<tr class="${isSelected ? "is-selected" : ""}">
           <td><strong>${h(connection.displayName)}</strong></td>
           <td>${h(connector?.name ?? connection.connectorId)}</td>
@@ -1132,7 +1140,7 @@ function adminClientApp() {
         configSummary: configSummaryFromForm(form)
       });
       applyState(result.state);
-      uiState.selectedConnectionId = result.connection?.id ?? uiState.selectedConnectionId;
+      uiState.drawer.connectionId = result.connection?.id ?? uiState.drawer.connectionId;
       render();
       return;
     }
@@ -1160,7 +1168,7 @@ function adminClientApp() {
         configSummary: configSummaryFromText(formText(form, "configSummary"))
       });
       applyState(result.state);
-      uiState.selectedConnectionId = result.connection?.id ?? connectionId;
+      uiState.drawer.connectionId = result.connection?.id ?? connectionId;
       render();
     }
   }
@@ -1175,20 +1183,18 @@ function adminClientApp() {
     }
     if (action === "select-region" && button.dataset.regionId) {
       uiState.selectedRegionId = button.dataset.regionId;
-      uiState.selectedConnectionId = null;
-      selectedConnectionForRegion(regionConnections(button.dataset.regionId));
       render();
       return;
     }
     if (action === "select-connection" && button.dataset.connectionId) {
-      uiState.selectedConnectionId = button.dataset.connectionId;
+      uiState.drawer.connectionId = button.dataset.connectionId;
       render();
       return;
     }
     if (action === "test-connection" && button.dataset.connectionId) {
       const result = await postJson(`/admin/api/connections/${encodeURIComponent(button.dataset.connectionId)}/test`);
       applyState(result.state);
-      uiState.selectedConnectionId = result.connection?.id ?? button.dataset.connectionId;
+      uiState.drawer.connectionId = result.connection?.id ?? button.dataset.connectionId;
       render();
       return;
     }
@@ -1306,8 +1312,6 @@ function adminClientApp() {
     }
     if (control === "region") {
       uiState.selectedRegionId = target.value;
-      uiState.selectedConnectionId = null;
-      selectedConnectionForRegion(regionConnections(uiState.selectedRegionId));
       render();
     }
     if (control === "connector") {
@@ -1315,7 +1319,7 @@ function adminClientApp() {
       render();
     }
     if (control === "connection") {
-      uiState.selectedConnectionId = target.value;
+      uiState.drawer.connectionId = target.value;
       render();
     }
   });
