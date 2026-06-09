@@ -463,10 +463,6 @@ textarea {
   padding-top: 2px;
 }
 
-.edit-block {
-  margin-top: 12px;
-}
-
 .select-pair {
   display: grid;
   grid-template-columns: minmax(120px, 160px) minmax(160px, 240px);

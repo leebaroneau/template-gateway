@@ -302,14 +302,14 @@ function adminClientApp() {
 
   function connectionRows(connections: Item[]): string {
     if (!connections.length) {
-      return `<tr><td colspan="7" class="muted">No connections.</td></tr>`;
+      return `<tr><td colspan="6" class="muted">No connections.</td></tr>`;
     }
     return connections
       .map((connection) => {
         const connector = connectorFor(connection);
         const region = byId("regions", connection.regionId);
-        const isSelected = connection.id === uiState.drawer.connectionId && uiState.drawer.open;
-        return `<tr class="${isSelected ? "is-selected" : ""}">
+        const isActive = connection.id === uiState.drawer.connectionId && uiState.drawer.open;
+        return `<tr class="${isActive ? "is-selected" : ""}">
           <td><strong>${h(connection.displayName)}</strong></td>
           <td>${h(connector?.name ?? connection.connectorId)}</td>
           <td>${h(region?.code ?? connection.regionId)}</td>
@@ -317,8 +317,9 @@ function adminClientApp() {
           <td>${statusBadge(connection.status)}</td>
           <td>${sourceBadge("connection", connection.id)}</td>
           <td class="button-row">
-            <button class="btn" type="button" data-action="select-connection" data-connection-id="${h(connection.id)}">${isSelected ? "Selected" : "Edit"}</button>
-            <button class="btn" type="button" data-action="test-connection" data-connection-id="${h(connection.id)}">Test</button>
+            <button class="btn" type="button"
+                    data-action="open-edit-drawer"
+                    data-connection-id="${h(connection.id)}">Edit</button>
           </td>
         </tr>`;
       })
@@ -501,41 +502,6 @@ function adminClientApp() {
     </form>`;
   }
 
-  function renderConnectionEditor(connection: Item | undefined): string {
-    if (!connection) {
-      return `<div class="empty-panel">Select a connection to edit.</div>`;
-    }
-    const connector = connectorFor(connection);
-    const backendOptions = ((connector?.backendOptions ?? [connection.backendType]) as string[]).filter(Boolean);
-    return `<form data-action="update-connection" data-connection-id="${h(connection.id)}" class="form-grid inline-edit">
-      <label>
-        Display name
-        <input name="displayName" required value="${h(connection.displayName)}">
-      </label>
-      <label>
-        Backend type
-        <select name="backendType">${valueOptions(backendOptions, connection.backendType)}</select>
-      </label>
-      <label>
-        Status
-        <select name="status">${valueOptions(["needs_config", "pending", "connected", "needs_reconnect", "error"], connection.status)}</select>
-      </label>
-      <label>
-        Connector
-        <input value="${h(connector?.name ?? connection.connectorId)}" readonly>
-      </label>
-      <label class="span-2">
-        Config summary fields to save for this connection
-        <textarea name="configSummary" spellcheck="false" placeholder="key=value">${h(configSummaryText(connection.configSummary))}</textarea>
-      </label>
-      <div class="source-line span-2">${sourceBadge("connection", connection.id)}</div>
-      <div class="button-row span-2">
-        <button class="btn btn-primary" type="submit">Save connection</button>
-        ${resetButton("connection", connection.id)}
-      </div>
-    </form>`;
-  }
-
   function renderBrandList(): string {
     return collection("brands")
       .map((brand) => {
@@ -570,60 +536,6 @@ function adminClientApp() {
         }
       )
       .join("");
-  }
-
-  function renderConnectorSetup(): string {
-    const selectedBrand = byId("brands", uiState.selectedBrandId);
-    const selectedRegion = selectedRegionForBrand(brandRegions(selectedBrand?.id));
-    const connector = byId("connectors", uiState.selectedConnectorId) ?? collection("connectors")[0];
-    if (!selectedBrand || !selectedRegion || !connector) {
-      return `<section class="panel setup-flow"><div class="empty-panel">Select a brand, region, and connector.</div></section>`;
-    }
-    const backendOptions = (connector.backendOptions ?? []) as string[];
-    const requiredFields = (connector.requiredFields ?? []) as Item[];
-    const fields = requiredFields.length
-      ? requiredFields
-          .map((field) => {
-            const inputType = field.secret ? "password" : "text";
-            return `<label>
-              ${h(field.label)}
-              <input name="config_${h(field.key)}" type="${inputType}" autocomplete="${field.secret ? "new-password" : "off"}" placeholder="${h(field.example ?? "")}">
-            </label>`;
-          })
-          .join("")
-      : `<div class="empty-panel span-2">No required setup fields.</div>`;
-    return `<section class="panel setup-flow" id="setup-flow">
-      <div class="panel-header">
-        <div><h3>Connection setup</h3><p>${h(selectedBrand.name)} / ${h(selectedRegion.code)}</p></div>
-        ${statusBadge(connector.authMode)}
-      </div>
-      <form data-action="create-connection">
-        <div class="form-grid">
-          <label>
-            Connector
-            <select name="connectorId" data-control="connector">${optionsFor(collection("connectors"), connector.id)}</select>
-          </label>
-          <label>
-            Backend
-            <select name="backendType">
-              ${backendOptions.map((backend) => `<option value="${h(backend)}">${h(backend)}</option>`).join("")}
-            </select>
-          </label>
-          <label class="span-2">
-            Display name
-            <input name="displayName" required placeholder="${h(selectedBrand.name)} ${h(selectedRegion.code)} ${h(connector.name)}">
-          </label>
-          ${fields}
-          <div class="setup-summary span-2">
-            <div><strong>Scopes</strong>${chips((connector.scopes ?? []) as unknown[])}</div>
-            <div><strong>Supported backends</strong>${chips(backendOptions)}</div>
-          </div>
-          <div class="button-row span-2">
-            <button class="btn btn-primary" type="submit">Save connection</button>
-          </div>
-        </div>
-      </form>
-    </section>`;
   }
 
   function renderDrawer(): string {
@@ -895,7 +807,6 @@ function adminClientApp() {
     const regions = brandRegions(uiState.selectedBrandId);
     const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
-    const selectedConnection = connections[0];
 
     // Region tabs: AU | NZ | SG | UK | + Add
     const regionTabs = regions.map((region) => {
@@ -951,12 +862,9 @@ function adminClientApp() {
                   ${renderRegionEditor(selectedRegion)}
                 </div>
               </details>
-              <details>
-                <summary style="cursor:pointer;font-size:.8rem;color:#fff;list-style:none;padding:4px 10px;border-radius:4px;background:#2a7090;border:1px solid #2a7090">＋ Add connection</summary>
-                <div style="position:absolute;right:16px;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px;min-width:360px;box-shadow:0 4px 16px rgba(0,0,0,.12)">
-                  ${renderConnectorSetup()}
-                </div>
-              </details>
+              <button class="btn btn-primary btn-sm" type="button"
+                      data-action="open-add-drawer"
+                      style="font-size:.8rem;padding:4px 10px">＋ Add connection</button>
             </div>
           </div>` : ""}
 
@@ -964,11 +872,10 @@ function adminClientApp() {
           ${selectedRegion ? `
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Connection</th><th>Connector</th><th>Backend</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Connection</th><th>Connector</th><th>Rgn</th><th>Backend</th><th>Status</th><th></th><th></th></tr></thead>
               <tbody>${connectionRows(connections)}</tbody>
             </table>
           </div>
-          ${selectedConnection ? `<div class="edit-block">${renderConnectionEditor(selectedConnection)}</div>` : ""}
           ` : `<div class="empty-panel muted" style="padding:24px 16px">Select a region tab to view its connections.</div>`}
 
         </section>`;
@@ -1654,13 +1561,6 @@ function adminClientApp() {
     }
     if (action === "drawer-save") {
       uiState.drawer.open = false;
-      render();
-      return;
-    }
-    if (action === "test-connection" && button.dataset.connectionId) {
-      const result = await postJson(`/admin/api/connections/${encodeURIComponent(button.dataset.connectionId)}/test`);
-      applyState(result.state);
-      uiState.drawer.connectionId = result.connection?.id ?? button.dataset.connectionId;
       render();
       return;
     }
