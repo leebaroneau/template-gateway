@@ -291,7 +291,7 @@ function adminClientApp() {
       .map((connection) => {
         const connector = connectorFor(connection);
         const region = byId("regions", connection.regionId);
-        const isSelected = connection.id === uiState.drawer.connectionId;
+        const isSelected = connection.id === uiState.drawer.connectionId && uiState.drawer.open;
         return `<tr class="${isSelected ? "is-selected" : ""}">
           <td><strong>${h(connection.displayName)}</strong></td>
           <td>${h(connector?.name ?? connection.connectorId)}</td>
@@ -646,7 +646,7 @@ function adminClientApp() {
           <button class="drawer-close" type="button" data-action="close-drawer" title="Close">✕</button>
         </div>
         <div class="wizard-steps">${stepSegs}</div>
-        <div class="wizard-step-label">${h(stepLabels[drawer.step - 1])}</div>
+        <div class="wizard-step-label">${stepLabels[drawer.step - 1]}</div>
         ${body}
       </div>`;
   }
