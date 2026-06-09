@@ -9,3 +9,4 @@ coverage/
 data/
 .worktrees/
 config/dev-api-apps.manifest.json
+.gstack/
