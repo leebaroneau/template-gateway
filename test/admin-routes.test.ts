@@ -190,9 +190,8 @@ describe("admin routes", () => {
     expect(js.text).toContain("No API clients yet. Create one to test /api/v1 locally.");
     expect(js.text).toContain('select name="connectorId" data-control="connector"');
     expect(js.text).toContain('data-action="select-region"');
-    expect(js.text).toContain('data-action="select-connection"');
-    expect(js.text).toContain('data-action="test-connection"');
-    expect(js.text).toContain('data-action="select-connection"');
+    expect(js.text).toContain('data-action="open-edit-drawer"');
+    expect(js.text).toContain('data-action="open-add-drawer"');
     expect(js.text).toContain('data-action="reset-entity"');
     expect(js.text).toContain('data-action="create-key"');
     expect(js.text).toContain('data-action="copy-secret"');
