@@ -129,9 +129,20 @@ When the admin clicks "Authorise with Google/Shopify", the page navigates away. 
 
 This is a best-effort restoration — the drawer opens in the right place without requiring a separate callback UI.
 
+## Legacy Dev API connections
+
+Connections seeded from the Haverford Dev API are left untouched. The wizard does not attempt to detect or migrate their auth. If an admin opens the edit drawer on one of these connections:
+
+- Step 1 (Configure) works normally — display name and config fields are editable
+- Step 2 (Auth) shows the current status (`connected`) and "Next: Test →" is available immediately — no re-auth required
+- Step 3 runs the test against the existing credentials as-is
+
+This supports the cutover strategy: new connections are set up natively through the gateway, tested 1:1 against the Dev API equivalents, and only then does the swap happen. The wizard does not force migration.
+
 ## Out of Scope
 
 - Mobile responsive layout (admin is desktop-only today)
 - Drag-to-resize the drawer
 - Multi-connection bulk edit
 - Any backend API changes — all existing endpoints (`update-connection`, `create-connection`, `test-connection`) are reused as-is
+- Migrating Dev API credential auth to native gateway OAuth (separate workstream)
