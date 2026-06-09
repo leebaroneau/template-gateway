@@ -302,7 +302,7 @@ function adminClientApp() {
 
   function connectionRows(connections: Item[]): string {
     if (!connections.length) {
-      return `<tr><td colspan="6" class="muted">No connections.</td></tr>`;
+      return `<tr><td colspan="7" class="muted">No connections.</td></tr>`;
     }
     return connections
       .map((connection) => {
