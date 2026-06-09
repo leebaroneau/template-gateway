@@ -205,10 +205,6 @@ function adminClientApp() {
     return collection("connections").filter((connection) => connection.regionId === regionId);
   }
 
-  function selectedConnectionForRegion(connections: Item[]): Item | undefined {
-    return connections[0];
-  }
-
   function ensureSelections(): void {
     const brands = collection("brands");
     const connectors = collection("connectors");
@@ -613,6 +609,113 @@ function adminClientApp() {
     </section>`;
   }
 
+  function renderDrawer(): string {
+    const { drawer } = uiState;
+    if (!drawer.open) return "";
+
+    const connection = drawer.connectionId ? byId("connections", drawer.connectionId) : undefined;
+    const connector = connection
+      ? connectorFor(connection)
+      : drawer.pendingConnectorId
+        ? byId("connectors", drawer.pendingConnectorId)
+        : collection("connectors")[0];
+
+    const title = drawer.mode === "add" ? "Add connection" : "Edit connection";
+    const subtitle = connection
+      ? h(connection.displayName)
+      : connector
+        ? `${h(connector.name)} · new connection`
+        : "Select a connector";
+
+    const stepLabels = ["Configure", "Auth", "Test & Save"];
+    const stepSegs = [1, 2, 3].map((n) =>
+      `<div class="wizard-step-seg ${n <= drawer.step ? "active" : ""}"></div>`
+    ).join("");
+
+    const body = drawer.step === 1
+      ? renderDrawerStep1(connection, connector)
+      : drawer.step === 2
+        ? renderDrawerStep2(connection, connector)
+        : renderDrawerStep3(connection);
+
+    return `
+      <div class="drawer-overlay" data-action="close-drawer"></div>
+      <div class="drawer">
+        <div class="drawer-header">
+          <div><h3>${title}</h3><p>${subtitle}</p></div>
+          <button class="drawer-close" type="button" data-action="close-drawer" title="Close">✕</button>
+        </div>
+        <div class="wizard-steps">${stepSegs}</div>
+        <div class="wizard-step-label">${h(stepLabels[drawer.step - 1])}</div>
+        ${body}
+      </div>`;
+  }
+
+  function renderDrawerStep1(connection: Item | undefined, connector: Item | undefined): string {
+    const { drawer } = uiState;
+    const allConnectors = collection("connectors");
+    const backendOptions = ((connector?.backendOptions ?? ["native"]) as string[]).filter(Boolean);
+    const requiredFields = ((connector?.requiredFields ?? []) as Item[]).filter((f) => !f.secret);
+    const authMode = String(connector?.authMode ?? "none");
+
+    // Connector selector (add mode only)
+    const connectorSelect = drawer.mode === "add"
+      ? `<div class="wizard-field">
+           <label>Connector</label>
+           <select name="connectorId" data-control="drawer-connector">
+             ${allConnectors.map((c) =>
+               `<option value="${h(c.id)}" ${c.id === (connector?.id ?? "") ? "selected" : ""}>${h(c.name)}</option>`
+             ).join("")}
+           </select>
+           <div style="margin-top:4px;font-size:.8rem;color:var(--muted)">Auth: ${h(authMode)}</div>
+         </div>`
+      : `<div style="font-size:.8rem;color:var(--muted);padding:4px 0">${h(connector?.name ?? "")} · ${h(authMode)}</div>`;
+
+    const fields = requiredFields.map((field: Item) =>
+      `<div class="wizard-field">
+         <label>${h(field.label)}</label>
+         <input name="config_${h(field.key)}" type="text" autocomplete="off"
+                placeholder="${h(field.example ?? "")}"
+                value="${h((connection?.configSummary as Record<string, string>)?.[String(field.key)] ?? "")}">
+       </div>`
+    ).join("");
+
+    const skipAuth = authMode === "none";
+
+    return `<form data-action="drawer-save-step1" class="wizard-body">
+      ${connectorSelect}
+      <div class="wizard-field">
+        <label>Display name <span style="color:var(--danger)">*</span></label>
+        <input name="displayName" required
+               value="${h(connection?.displayName ?? "")}"
+               placeholder="${h(connector?.name ?? "New connection")}">
+      </div>
+      <div class="wizard-field">
+        <label>Backend type</label>
+        <select name="backendType">
+          ${backendOptions.map((b) =>
+            `<option value="${h(b)}" ${b === (connection?.backendType ?? backendOptions[0]) ? "selected" : ""}>${h(b)}</option>`
+          ).join("")}
+        </select>
+      </div>
+      ${fields}
+      <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
+        <button class="btn btn-primary" type="submit">${skipAuth ? "Next: Test →" : "Next: Auth →"}</button>
+        <button class="btn" type="button" data-action="close-drawer">Cancel</button>
+      </div>
+    </form>`;
+  }
+
+  function renderDrawerStep2(connection: Item | undefined, connector: Item | undefined): string {
+    // Implemented in Task 3
+    return `<div class="wizard-body"><div class="small muted">Auth step — coming soon.</div></div>`;
+  }
+
+  function renderDrawerStep3(connection: Item | undefined): string {
+    // Implemented in Task 4
+    return `<div class="wizard-body"><div class="small muted">Test & Save — coming soon.</div></div>`;
+  }
+
   function renderBrands(): string {
     const allBrands = collection("brands");
     const allRegions = collection("regions");
@@ -620,7 +723,7 @@ function adminClientApp() {
     const regions = brandRegions(uiState.selectedBrandId);
     const selectedRegion = selectedRegionForBrand(regions);
     const connections = selectedRegion ? regionConnections(selectedRegion.id) : [];
-    const selectedConnection = selectedConnectionForRegion(connections);
+    const selectedConnection = connections[0];
 
     // Region tabs: AU | NZ | SG | UK | + Add
     const regionTabs = regions.map((region) => {
@@ -698,7 +801,7 @@ function adminClientApp() {
 
         </section>`;
 
-    return `${viewHeader("Brands", `${allBrands.length} brands, ${allRegions.length} regions.`)}
+    return `${renderDrawer()}${viewHeader("Brands", `${allBrands.length} brands, ${allRegions.length} regions.`)}
       <div class="grid-wide">
         <section class="panel">
           <div class="panel-header"><div><h3>Brands</h3><p>${allBrands.length} configured.</p></div></div>
@@ -1123,7 +1226,6 @@ function adminClientApp() {
       });
       applyState(result.state);
       uiState.selectedRegionId = result.region?.id ?? regionId;
-      selectedConnectionForRegion(regionConnections(uiState.selectedRegionId));
       render();
       return;
     }
@@ -1188,6 +1290,10 @@ function adminClientApp() {
     }
     if (action === "select-connection" && button.dataset.connectionId) {
       uiState.drawer.connectionId = button.dataset.connectionId;
+      uiState.drawer.open = true;
+      uiState.drawer.step = 1;
+      uiState.drawer.testState = "idle";
+      uiState.drawer.testDetail = null;
       render();
       return;
     }
