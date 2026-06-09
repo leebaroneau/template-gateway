@@ -707,8 +707,96 @@ function adminClientApp() {
   }
 
   function renderDrawerStep2(connection: Item | undefined, connector: Item | undefined): string {
-    // Implemented in Task 3
-    return `<div class="wizard-body"><div class="small muted">Auth step — coming soon.</div></div>`;
+    const authMode = String(connector?.authMode ?? "none");
+    const connStatus = String(connection?.status ?? "needs_config");
+    const isConnected = connStatus === "connected";
+    const connectorName = h(connector?.name ?? "");
+
+    // OAuth connectors (Shopify, Google, etc.)
+    if (authMode === "oauth") {
+      const statusHtml = isConnected
+        ? `<div class="oauth-status oauth-status--connected">
+             <strong style="color:var(--success)">✓ Connected</strong>
+             <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">
+               ${h((connection?.configSummary as Record<string, string>)?.credential_ref ?? "Credentials stored")}
+             </div>
+           </div>`
+        : `<div class="oauth-status oauth-status--disconnected">
+             <strong style="color:var(--muted)">Not authorised</strong>
+             <div style="font-size:.8rem;margin-top:2px">Connect your ${connectorName} account to proceed.</div>
+           </div>`;
+
+      // Determine OAuth start URL per connector slug
+      const slug = String(connector?.slug ?? "");
+      const oauthStartPath = slug.startsWith("google")
+        ? "/admin/google-oauth/account/start"
+        : slug === "shopify"
+          ? "/admin/shopify-oauth/start"
+          : null;
+
+      const authoriseBtn = oauthStartPath
+        ? `<button class="btn btn-primary" type="button"
+                    data-action="drawer-oauth-start"
+                    data-oauth-path="${h(oauthStartPath)}">
+             ${isConnected ? "↺ Re-authorise with " + connectorName : "Authorise with " + connectorName}
+           </button>`
+        : `<div class="small muted">OAuth start not configured for this connector.</div>`;
+
+      return `<div class="wizard-body">
+        ${statusHtml}
+        ${authoriseBtn}
+        <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
+          ${isConnected
+            ? `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>`
+            : `<button class="btn" type="button" data-action="drawer-next" title="Skip and keep existing auth">Skip →</button>`
+          }
+          <button class="btn" type="button" data-action="drawer-back">← Back</button>
+        </div>
+      </div>`;
+    }
+
+    // API key / service account — secret fields
+    const secretFields = ((connector?.requiredFields ?? []) as Item[]).filter((f) => f.secret);
+    const serviceAccount = authMode === "service_account";
+
+    if (serviceAccount || secretFields.length > 0) {
+      const inputs = serviceAccount
+        ? `<div class="wizard-field">
+             <label>Service account JSON <span style="color:var(--danger)">*</span></label>
+             <textarea name="config_service_account_json" rows="6"
+                       placeholder='{"type":"service_account","project_id":"..."}'
+                       autocomplete="new-password"></textarea>
+           </div>`
+        : secretFields.map((field: Item) =>
+            `<div class="wizard-field">
+               <label>${h(field.label)} <span style="color:var(--danger)">*</span></label>
+               <input name="config_${h(field.key)}" type="password" autocomplete="new-password"
+                      placeholder="${h(field.example ?? "")}"
+                      value="">
+             </div>`
+          ).join("");
+
+      const hasExisting = isConnected;
+      return `<form data-action="drawer-save-step2" class="wizard-body">
+        ${hasExisting
+          ? `<div class="test-result test-result--passed" style="margin-bottom:4px">✓ Credentials already set. Leave fields blank to keep existing.</div>`
+          : ""}
+        ${inputs}
+        <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
+          <button class="btn btn-primary" type="submit">Next: Test →</button>
+          <button class="btn" type="button" data-action="drawer-back">← Back</button>
+        </div>
+      </form>`;
+    }
+
+    // none — should not be reached (step is skipped), but handle gracefully
+    return `<div class="wizard-body">
+      <div class="small muted">No authentication required for this connector.</div>
+      <div class="wizard-footer" style="padding:14px 0 0;border-top:1px solid var(--line)">
+        <button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>
+        <button class="btn" type="button" data-action="drawer-back">← Back</button>
+      </div>
+    </div>`;
   }
 
   function renderDrawerStep3(connection: Item | undefined): string {
