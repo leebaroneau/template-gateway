@@ -266,6 +266,23 @@ function adminClientApp() {
     clearError();
     const state = await requestJson("/admin/api/state");
     applyState(state);
+    // Restore drawer state if returning from OAuth redirect
+    const drawerReturn = sessionStorage.getItem("drawerReturn");
+    if (drawerReturn) {
+      try {
+        const saved = JSON.parse(drawerReturn) as Partial<DrawerState>;
+        sessionStorage.removeItem("drawerReturn");
+        uiState.drawer = {
+          open: true,
+          mode: saved.mode ?? "edit",
+          connectionId: saved.connectionId ?? null,
+          step: (saved.step as 1 | 2 | 3) ?? 2,
+          testState: "idle",
+          testDetail: null,
+          pendingConnectorId: saved.pendingConnectorId ?? null
+        };
+      } catch { /* ignore malformed */ }
+    }
     render();
   }
 
@@ -1430,6 +1447,11 @@ function adminClientApp() {
     }
   }
 
+  // Stub — implemented in Task 6
+  async function triggerDrawerTest(connectionId: string): Promise<void> {
+    void connectionId;
+  }
+
   async function handleButton(button: HTMLElement): Promise<void> {
     clearError();
     const action = button.dataset.action;
@@ -1443,13 +1465,92 @@ function adminClientApp() {
       render();
       return;
     }
-    if (action === "select-connection" && button.dataset.connectionId) {
-      uiState.drawer.connectionId = button.dataset.connectionId;
-      uiState.drawer.open = true;
-      uiState.drawer.step = 1;
-      uiState.drawer.testState = "idle";
-      uiState.drawer.testDetail = null;
+    if (action === "open-edit-drawer" && button.dataset.connectionId) {
+      uiState.drawer = {
+        open: true,
+        mode: "edit",
+        connectionId: button.dataset.connectionId,
+        step: 1,
+        testState: "idle",
+        testDetail: null,
+        pendingConnectorId: null
+      };
       render();
+      return;
+    }
+    if (action === "open-add-drawer") {
+      const firstConnector = collection("connectors")[0];
+      uiState.drawer = {
+        open: true,
+        mode: "add",
+        connectionId: null,
+        step: 1,
+        testState: "idle",
+        testDetail: null,
+        pendingConnectorId: firstConnector?.id ?? null
+      };
+      render();
+      return;
+    }
+    if (action === "close-drawer") {
+      uiState.drawer.open = false;
+      render();
+      return;
+    }
+    if (action === "drawer-next") {
+      const { drawer } = uiState;
+      const connection = drawer.connectionId ? byId("connections", drawer.connectionId) : undefined;
+      const connector = connection
+        ? connectorFor(connection)
+        : drawer.pendingConnectorId
+          ? byId("connectors", drawer.pendingConnectorId)
+          : collection("connectors")[0];
+      const authMode = String(connector?.authMode ?? "none");
+      if (drawer.step === 1) {
+        drawer.step = authMode === "none" ? 3 : 2;
+        if (drawer.step === 3 && drawer.mode === "edit" && drawer.connectionId) {
+          void triggerDrawerTest(drawer.connectionId);
+        }
+      } else if (drawer.step === 2) {
+        drawer.step = 3;
+        if (drawer.mode === "edit" && drawer.connectionId) {
+          void triggerDrawerTest(drawer.connectionId);
+        }
+      }
+      render();
+      return;
+    }
+    if (action === "drawer-back") {
+      const { drawer } = uiState;
+      const connection = drawer.connectionId ? byId("connections", drawer.connectionId) : undefined;
+      const connector = connection
+        ? connectorFor(connection)
+        : drawer.pendingConnectorId
+          ? byId("connectors", drawer.pendingConnectorId)
+          : collection("connectors")[0];
+      const authMode = String(connector?.authMode ?? "none");
+      if (drawer.step === 3) {
+        drawer.step = authMode === "none" ? 1 : 2;
+        drawer.testState = "idle";
+        drawer.testDetail = null;
+      } else if (drawer.step === 2) {
+        drawer.step = 1;
+      }
+      render();
+      return;
+    }
+    if (action === "drawer-oauth-start" && button.dataset.oauthPath) {
+      const { drawer } = uiState;
+      sessionStorage.setItem("drawerReturn", JSON.stringify({
+        mode: drawer.mode,
+        connectionId: drawer.connectionId,
+        pendingConnectorId: drawer.pendingConnectorId,
+        step: 2
+      }));
+      const response = await postJson(button.dataset.oauthPath, {});
+      if (response.redirectUrl) {
+        window.location.href = response.redirectUrl as string;
+      }
       return;
     }
     if (action === "test-connection" && button.dataset.connectionId) {
@@ -1577,6 +1678,10 @@ function adminClientApp() {
     }
     if (control === "connector") {
       uiState.selectedConnectorId = target.value;
+      render();
+    }
+    if (control === "drawer-connector") {
+      uiState.drawer.pendingConnectorId = target.value;
       render();
     }
     if (control === "connection") {
