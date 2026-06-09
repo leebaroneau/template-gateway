@@ -577,7 +577,51 @@ function adminClientApp() {
         <div class="wizard-steps">${stepSegs}</div>
         <div class="wizard-step-label">${stepLabels[drawer.step - 1]}</div>
         ${body}
+        <div class="wizard-footer">${renderDrawerFooter(connection, connector)}</div>
       </div>`;
+  }
+
+  function renderDrawerFooter(connection: Item | undefined, connector: Item | undefined): string {
+    const { drawer } = uiState;
+    const authMode = String(connector?.authMode ?? "none");
+    const isConnected = String(connection?.status ?? "needs_config") === "connected";
+
+    if (drawer.step === 1) {
+      const skipAuth = authMode === "none";
+      return `<button class="btn btn-primary" type="submit" form="drawer-step1-form">${skipAuth ? "Next: Test →" : "Next: Auth →"}</button>
+              <button class="btn" type="button" data-action="close-drawer">Cancel</button>`;
+    }
+
+    if (drawer.step === 2) {
+      if (authMode === "oauth") {
+        return `${isConnected
+          ? `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>`
+          : `<button class="btn" type="button" data-action="drawer-next" title="Skip and keep existing auth">Skip →</button>`}
+                <button class="btn" type="button" data-action="drawer-back">← Back</button>`;
+      }
+      const hasSecretFields = authMode === "service_account" || ((connector?.requiredFields ?? []) as Item[]).some((f) => f.secret);
+      if (hasSecretFields) {
+        return `<button class="btn btn-primary" type="submit" form="drawer-step2-form">Next: Test →</button>
+                <button class="btn" type="button" data-action="drawer-back">← Back</button>`;
+      }
+      return `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>
+              <button class="btn" type="button" data-action="drawer-back">← Back</button>`;
+    }
+
+    // Step 3
+    const saveBtn = drawer.testState === "failed"
+      ? `<button class="btn" type="button" data-action="drawer-save"
+             style="background:var(--warning);color:#fff;border-color:var(--warning)"
+             title="Connection will be saved with status needs_reconnect">Save anyway</button>`
+      : `<button class="btn btn-primary" type="button" data-action="drawer-save">Save connection</button>`;
+    const retestBtn = connection && drawer.mode === "edit"
+      ? `<button class="btn" type="button" data-action="drawer-test"
+             data-connection-id="${h(connection.id)}"
+             ${drawer.testState === "running" ? "disabled" : ""}>
+           ${drawer.testState === "failed" ? "Retry test" : "Run test"}
+         </button>`
+      : "";
+    return `${saveBtn}${retestBtn}<button class="btn" type="button" data-action="drawer-back">← Back</button>`;
   }
 
   function renderDrawerStep1(connection: Item | undefined, connector: Item | undefined): string {
@@ -611,7 +655,7 @@ function adminClientApp() {
 
     const skipAuth = authMode === "none";
 
-    return `<form data-action="drawer-save-step1" class="wizard-body">
+    return `<form id="drawer-step1-form" data-action="drawer-save-step1" class="wizard-body">
       ${connectorSelect}
       <div class="wizard-field">
         <label>Display name <span style="color:var(--danger)">*</span></label>
@@ -628,10 +672,6 @@ function adminClientApp() {
         </select>
       </div>
       ${fields}
-      <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
-        <button class="btn btn-primary" type="submit">${skipAuth ? "Next: Test →" : "Next: Auth →"}</button>
-        <button class="btn" type="button" data-action="close-drawer">Cancel</button>
-      </div>
     </form>`;
   }
 
@@ -674,13 +714,6 @@ function adminClientApp() {
       return `<div class="wizard-body">
         ${statusHtml}
         ${authoriseBtn}
-        <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
-          ${isConnected
-            ? `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>`
-            : `<button class="btn" type="button" data-action="drawer-next" title="Skip and keep existing auth">Skip →</button>`
-          }
-          <button class="btn" type="button" data-action="drawer-back">← Back</button>
-        </div>
       </div>`;
     }
 
@@ -706,25 +739,17 @@ function adminClientApp() {
           ).join("");
 
       const hasExisting = isConnected;
-      return `<form data-action="drawer-save-step2" class="wizard-body">
+      return `<form id="drawer-step2-form" data-action="drawer-save-step2" class="wizard-body">
         ${hasExisting
           ? `<div class="test-result test-result--passed" style="margin-bottom:4px">✓ Credentials already set. Leave fields blank to keep existing.</div>`
           : ""}
         ${inputs}
-        <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
-          <button class="btn btn-primary" type="submit">Next: Test →</button>
-          <button class="btn" type="button" data-action="drawer-back">← Back</button>
-        </div>
       </form>`;
     }
 
     // none — should not be reached (step is skipped), but handle gracefully
     return `<div class="wizard-body">
       <div class="small muted">No authentication required for this connector.</div>
-      <div class="wizard-footer" style="padding:14px 0 0;border-top:1px solid var(--line)">
-        <button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>
-        <button class="btn" type="button" data-action="drawer-back">← Back</button>
-      </div>
     </div>`;
   }
 
@@ -792,11 +817,6 @@ function adminClientApp() {
     return `<div class="wizard-body">
       ${testPanel}
       ${summary}
-      <div class="wizard-footer" style="margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line)">
-        ${saveBtn}
-        ${retestBtn}
-        <button class="btn" type="button" data-action="drawer-back">← Back</button>
-      </div>
     </div>`;
   }
 

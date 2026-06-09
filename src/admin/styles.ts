@@ -772,7 +772,7 @@ textarea {
   z-index: 50;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   transform: translateX(0);
 }
 
@@ -826,6 +826,7 @@ textarea {
 .wizard-body {
   padding: 0 20px 20px;
   flex: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -860,6 +861,8 @@ textarea {
   border-top: 1px solid var(--line);
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+  background: var(--panel);
 }
 
 .test-result {
