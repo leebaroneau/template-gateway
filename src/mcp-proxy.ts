@@ -1,4 +1,9 @@
 import type { Request, Response } from "express";
+import {
+  createPipedriveFacade,
+  isPipedriveFacadeConfigured,
+  type PipedriveFacadeConfig
+} from "./pipedrive-facade.js";
 import type { SessionCache, SessionFactory } from "./session-cache.js";
 
 /**
@@ -61,6 +66,7 @@ export function makeComposioSessionFactory(opts: {
 interface ForwardOptions {
   cache: SessionCache;
   fetchImpl?: typeof fetch;
+  pipedriveFacade?: PipedriveFacadeConfig;
 }
 
 /**
@@ -76,6 +82,18 @@ export async function forwardJsonRpc(req: Request, res: Response, options: Forwa
     return;
   }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const facade = options.pipedriveFacade && isPipedriveFacadeConfigured(options.pipedriveFacade)
+    ? createPipedriveFacade(options.pipedriveFacade, fetchImpl)
+    : undefined;
+  const requestBody = req.body as { method?: string } | undefined;
+
+  if (req.method === "POST" && facade && requestBody?.method !== "tools/list") {
+    const facadeResponse = await facade.handleJsonRpc(req.body);
+    if (facadeResponse) {
+      res.status(200).json(facadeResponse);
+      return;
+    }
+  }
 
   let session;
   try {
@@ -125,5 +143,29 @@ export async function forwardJsonRpc(req: Request, res: Response, options: Forwa
     if (value) res.setHeader(name, value);
   }
   const text = await upstream.text();
+  if (req.method === "POST" && facade && upstream.ok && requestBody?.method === "tools/list") {
+    const decorated = await decorateToolsList(req.body, text, facade);
+    if (decorated) {
+      res.setHeader("content-type", "application/json");
+      res.send(JSON.stringify(decorated));
+      return;
+    }
+  }
   res.send(text);
+}
+
+async function decorateToolsList(
+  requestBody: unknown,
+  upstreamText: string,
+  facade: ReturnType<typeof createPipedriveFacade>
+) {
+  try {
+    const parsed = JSON.parse(upstreamText);
+    const upstreamToolsList = parsed?.result && typeof parsed.result === "object"
+      ? parsed.result
+      : undefined;
+    return facade.handleJsonRpc(requestBody as any, upstreamToolsList);
+  } catch {
+    return undefined;
+  }
 }
