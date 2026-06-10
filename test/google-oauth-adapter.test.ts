@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GoogleOAuthAdapter } from "../src/google-oauth/adapter.js";
 import { GatewayGoogleStore } from "../src/google-oauth/store.js";
+import { GatewayAccountStore } from "../src/account-credentials/store.js";
+import { encryptCredential as encryptAccountCredential } from "../src/account-credentials/crypto.js";
 
 const TEST_KEY = Buffer.alloc(32, 0x42).toString("base64url");
 
@@ -16,7 +18,7 @@ const GOOGLE_CONFIG = {
 
 let tempDir: string;
 let dbPath: string;
-let stores: GatewayGoogleStore[];
+let stores: Array<{ close(): void }>;
 
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-adapter-"));
@@ -34,6 +36,13 @@ function openStore(): GatewayGoogleStore {
   const store = new GatewayGoogleStore(dbPath);
   stores.push(store);
   return store;
+}
+
+function openStores(): { googleStore: GatewayGoogleStore; accountStore: GatewayAccountStore } {
+  const googleStore = new GatewayGoogleStore(dbPath);
+  const accountStore = new GatewayAccountStore(dbPath);
+  stores.push(googleStore, accountStore);
+  return { googleStore, accountStore };
 }
 
 describe("GoogleOAuthAdapter.startFlow", () => {
@@ -198,5 +207,54 @@ describe("GoogleOAuthAdapter.refreshTokenIfNeeded", () => {
     const refreshed = await adapter.refreshTokenIfNeeded(credId, fetchFn);
     expect(refreshed).toBe(true);
     expect(vi.mocked(fetchFn)).toHaveBeenCalledOnce();
+  });
+});
+
+describe("getAccountAccessToken", () => {
+  it("returns an access token by calling the token endpoint", async () => {
+    const { accountStore, googleStore } = openStores();
+    const adapter = new GoogleOAuthAdapter(GOOGLE_CONFIG, googleStore);
+
+    // Seed an account with a refresh token
+    const encrypted = encryptAccountCredential({
+      service: "google",
+      externalAccountId: "admin@test.com",
+      refreshToken: "rt_seed",
+      accessToken: "old_access",
+      scope: "analytics.readonly"
+    }, TEST_KEY);
+    const accountId = accountStore.upsertAccount({
+      service: "google",
+      externalAccountId: "admin@test.com",
+      displayName: "Test",
+      encryptedPayload: encrypted,
+      scope: "analytics.readonly",
+      status: "connected"
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: "ya29.new",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: "analytics.readonly"
+      })
+    } as unknown as Response);
+
+    const token = await adapter.getAccountAccessToken(accountId, accountStore, mockFetch);
+    expect(token).toBe("ya29.new");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://oauth2.googleapis.com/token",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("throws if account not found", async () => {
+    const { accountStore, googleStore } = openStores();
+    const adapter = new GoogleOAuthAdapter(GOOGLE_CONFIG, googleStore);
+    await expect(
+      adapter.getAccountAccessToken("oauth_acct_notfound", accountStore, fetch)
+    ).rejects.toThrow("Account not found");
   });
 });
