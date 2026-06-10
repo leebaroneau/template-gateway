@@ -182,6 +182,34 @@ describe("forwardJsonRpc", () => {
     expect(res.body.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_pipeline_shape");
   });
 
+  it("adds deterministic pipedrive tools to SSE tools/list responses", async () => {
+    const upstreamFetch = makeFetch({
+      status: 200,
+      headers: { "content-type": "text/event-stream; charset=utf-8" },
+      body: `event: message\ndata: ${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { tools: [{ name: "COMPOSIO_SEARCH_TOOLS", inputSchema: { type: "object" } }] }
+      })}\n\n`
+    });
+    const { app } = buildAppWithPipedriveFacade({ fetchImpl: upstreamFetch });
+
+    const res = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer a_secret_thats_long_enough")
+      .set("Accept", "application/json, text/event-stream")
+      .set("X-Composio-User-Id", "user-marketing")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const dataLine = res.text.split(/\r?\n/).find((line) => line.startsWith("data: "));
+    const payload = JSON.parse(dataLine?.slice("data: ".length) ?? "{}");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toContain("COMPOSIO_SEARCH_TOOLS");
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_api_request");
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_pipeline_shape");
+  });
+
   it("handles deterministic pipedrive tool calls at the gateway edge", async () => {
     const upstreamFetch = vi.fn(async (url: string) => {
       if (url.startsWith("https://upstream/")) {

@@ -144,10 +144,10 @@ export async function forwardJsonRpc(req: Request, res: Response, options: Forwa
   }
   const text = await upstream.text();
   if (req.method === "POST" && facade && upstream.ok && requestBody?.method === "tools/list") {
-    const decorated = await decorateToolsList(req.body, text, facade);
+    const decorated = await decorateToolsList(req.body, text, facade, upstream.headers.get("content-type") ?? "");
     if (decorated) {
-      res.setHeader("content-type", "application/json");
-      res.send(JSON.stringify(decorated));
+      res.setHeader("content-type", decorated.contentType);
+      res.send(decorated.body);
       return;
     }
   }
@@ -157,15 +157,38 @@ export async function forwardJsonRpc(req: Request, res: Response, options: Forwa
 async function decorateToolsList(
   requestBody: unknown,
   upstreamText: string,
-  facade: ReturnType<typeof createPipedriveFacade>
+  facade: ReturnType<typeof createPipedriveFacade>,
+  contentType: string
 ) {
   try {
-    const parsed = JSON.parse(upstreamText);
+    const eventStream = contentType.includes("text/event-stream");
+    const parsed = eventStream ? parseServerSentEventJson(upstreamText) : JSON.parse(upstreamText);
     const upstreamToolsList = parsed?.result && typeof parsed.result === "object"
       ? parsed.result
       : undefined;
-    return facade.handleJsonRpc(requestBody as any, upstreamToolsList);
+    const response = await facade.handleJsonRpc(requestBody as any, upstreamToolsList);
+    if (!response) return undefined;
+    if (eventStream) {
+      return {
+        contentType: "text/event-stream; charset=utf-8",
+        body: `event: message\ndata: ${JSON.stringify(response)}\n\n`
+      };
+    }
+    return {
+      contentType: "application/json",
+      body: JSON.stringify(response)
+    };
   } catch {
     return undefined;
   }
+}
+
+function parseServerSentEventJson(text: string): unknown {
+  const data = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice("data: ".length))
+    .join("\n");
+  if (!data) throw new Error("SSE response did not contain a data event.");
+  return JSON.parse(data);
 }
