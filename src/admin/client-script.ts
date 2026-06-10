@@ -29,6 +29,8 @@ function adminClientApp() {
     appInstalls?: Item[];
     allConnectors?: Item[];
     googleAccounts?: Item[];
+    propertyOptions?: Record<string, Item[]>;
+    propertyLoading?: Set<string>;
     drawer: DrawerState;
   };
 
@@ -63,6 +65,17 @@ function adminClientApp() {
     "apps.read",
     "apps.write"
   ];
+
+  // Keep in sync with src/google-oauth/types.ts googleConnectorBinding.
+  if (typeof window !== "undefined") {
+    (window as any).__googleConnectorBinding = {
+      "google-analytics-4":      { product: "ga4",             configKey: "property_id" },
+      "google-search-console":   { product: "gsc",             configKey: "site_url" },
+      "google-ads":              { product: "google_ads",      configKey: "customer_id" },
+      "merchant-center":         { product: "merchant_center", configKey: "merchant_center_id" },
+      "google-business-profile": { product: "google_business", configKey: "location_name" }
+    };
+  }
 
   if (!root || !errorPanel) {
     return;
@@ -617,10 +630,16 @@ function adminClientApp() {
         const isGoogle = slug.startsWith("google");
         const hasGoogleAccount = isGoogle && (uiState.googleAccounts ?? []).length > 0;
         if (hasGoogleAccount) {
-          return `${backBtn}
-                  <div class="footer-right">
-                    <button class="btn btn-primary" type="button" data-action="drawer-use-google-account">Next: Test →</button>
-                  </div>`;
+          const cId = String(drawer.connectionId ?? "");
+          const options: Item[] = uiState.propertyOptions?.[cId] ?? [];
+          const isLoading = uiState.propertyLoading?.has(cId);
+          const hasPickerOptions = options.length > 0;
+          const btn = isLoading
+            ? `<button class="btn btn-primary" type="button" disabled>Loading…</button>`
+            : hasPickerOptions
+              ? `<button class="btn btn-primary" type="button" data-action="drawer-confirm-property">Confirm & Test →</button>`
+              : `<button class="btn btn-primary" type="button" data-action="drawer-use-google-account">Next: Test →</button>`;
+          return `${backBtn}<div class="footer-right">${btn}</div>`;
         }
         return `${backBtn}
                 <div class="footer-right">
@@ -720,14 +739,67 @@ function adminClientApp() {
           const email = h(String(linkedAccount.externalAccountId ?? linkedAccount.displayName ?? "Google account"));
           const statusIcon = String(linkedAccount.status) === "connected" ? "✓" : "⚠";
           const statusColor = String(linkedAccount.status) === "connected" ? "var(--success)" : "var(--warning)";
+          const accountId = String(linkedAccount.id);
+          const connectorSlug = String(connector?.slug ?? "");
+          const connectionId = String(uiState.drawer.connectionId ?? "");
+          const binding = (window as any).__googleConnectorBinding?.[connectorSlug];
+          const configKey = binding?.configKey;
+          const currentValue = configKey
+            ? String((connection?.configSummary as Record<string, string>)?.[configKey] ?? "")
+            : "";
+          const isLoading = uiState.propertyLoading?.has(connectionId);
+          const options: Item[] = uiState.propertyOptions?.[connectionId] ?? [];
+          const hasOptions = options.length > 0;
+
+          const pickerHtml = isLoading
+            ? `<div style="font-size:.85rem;color:var(--muted);margin-top:8px">Loading properties…</div>`
+            : currentValue
+              ? `<div style="font-size:.85rem;margin-top:8px">
+                   <strong>Current:</strong> <code>${h(currentValue)}</code>
+                   <button class="btn btn-link" type="button"
+                           style="font-size:.8rem;padding:0 4px;color:var(--muted)"
+                           data-action="drawer-clear-property"
+                           data-connection-id="${h(connectionId)}"
+                           data-config-key="${h(configKey ?? "")}">
+                     ↺ Change
+                   </button>
+                 </div>`
+              : hasOptions
+                ? (() => {
+                    const region = connection ? byId("regions", String(connection.regionId ?? "")) : undefined;
+                    const regionDomain = region?.domain ? String(region.domain).replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
+                    const suggestedId = regionDomain
+                      ? options.find((o: Item) => {
+                          const url = String(o.url ?? "").replace(/^https?:\/\//, "").replace(/\/$/, "");
+                          return url === regionDomain || url.endsWith(`.${regionDomain}`) || url.startsWith(regionDomain);
+                        })?.id ?? ""
+                      : "";
+                    return `<div style="margin-top:8px">
+                     <label style="font-size:.8rem;font-weight:600">Select property</label>
+                     <select id="property-picker-${h(connectionId)}" style="width:100%;margin-top:4px" data-connection-id="${h(connectionId)}">
+                       <option value="">— choose —</option>
+                       ${options.map((opt: Item) => {
+                         const claimed = Boolean(opt.alreadyClaimed);
+                         const isAutoSuggested = String(opt.id) === String(suggestedId);
+                         const label = h(String(opt.displayName ?? opt.id)) + (opt.url ? ` (${h(String(opt.url))})` : "") + (claimed ? " — used by another connection" : "") + (isAutoSuggested ? " ★" : "");
+                         return `<option value="${h(String(opt.id))}" ${isAutoSuggested ? "selected" : ""} ${claimed ? 'style="color:var(--muted)"' : ""}>${label}</option>`;
+                       }).join("")}
+                     </select>
+                   </div>`;
+                  })()
+                : configKey
+                  ? `<div style="font-size:.85rem;color:var(--muted);margin-top:8px">No properties found. Set manually in step 1 or re-authenticate.</div>`
+                  : "";
+
           return `<div class="wizard-body">
             <div class="oauth-status oauth-status--connected" style="margin-bottom:12px">
               <strong style="color:${statusColor}">${statusIcon} ${email}</strong>
               <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">Google account ready to use</div>
             </div>
-            <input type="hidden" id="google-account-id" value="${h(String(linkedAccount.id))}">
+            <input type="hidden" id="google-account-id" value="${h(accountId)}">
+            ${pickerHtml}
             <button class="btn btn-link" type="button"
-                    style="font-size:.8rem;padding:0;color:var(--muted)"
+                    style="font-size:.8rem;padding:4px 0 0;color:var(--muted)"
                     data-action="drawer-oauth-start"
                     data-oauth-path="/oauth/google/account/start">
               ↺ Use a different Google account
@@ -1472,6 +1544,16 @@ function adminClientApp() {
       }
 
       drawer.step = authMode === "none" ? 3 : 2;
+      if (drawer.step === 2 && authMode === "oauth") {
+        const slug = String(connector?.slug ?? "");
+        if (slug.startsWith("google") || slug === "google-business-profile") {
+          const googleAccts = uiState.googleAccounts ?? [];
+          const linkedAcct = googleAccts.find((a) => a.status === "connected") ?? googleAccts[0];
+          if (linkedAcct && uiState.drawer.connectionId) {
+            void fetchPropertyOptions(uiState.drawer.connectionId, String(linkedAcct.id), slug);
+          }
+        }
+      }
       if (drawer.step === 3 && drawer.connectionId) {
         void triggerDrawerTest(drawer.connectionId);
       }
@@ -1502,6 +1584,26 @@ function adminClientApp() {
       }
       render();
       return;
+    }
+  }
+
+  async function fetchPropertyOptions(connectionId: string, accountId: string, connectorSlug: string): Promise<void> {
+    if (!uiState.propertyLoading) uiState.propertyLoading = new Set();
+    if (!uiState.propertyOptions) uiState.propertyOptions = {};
+    uiState.propertyLoading.add(connectionId);
+    render();
+    try {
+      const params = new URLSearchParams({ accountId, connectorSlug, connectionId });
+      const result = await fetch(`/admin/api/google-properties?${params.toString()}`);
+      if (!result.ok) throw new Error(`${result.status}`);
+      const data = await result.json() as { properties: Item[] };
+      uiState.propertyOptions[connectionId] = data.properties ?? [];
+    } catch (err) {
+      uiState.propertyOptions[connectionId] = [];
+      console.warn("[gateway] property fetch failed:", err instanceof Error ? err.message : String(err));
+    } finally {
+      uiState.propertyLoading!.delete(connectionId);
+      render();
     }
   }
 
@@ -1651,6 +1753,70 @@ function adminClientApp() {
       drawer.step = 3;
       if (drawer.mode === "edit" && drawer.connectionId) {
         void triggerDrawerTest(drawer.connectionId);
+      }
+      render();
+      return;
+    }
+    if (action === "drawer-confirm-property") {
+      const { drawer } = uiState;
+      const accounts = uiState.googleAccounts ?? [];
+      const account = accounts.find((a) => a.status === "connected") ?? accounts[0];
+      if (!account || !drawer.connectionId) {
+        showError("No Google account or connection found.");
+        return;
+      }
+      const connection = byId("connections", drawer.connectionId);
+      const connector = connection ? connectorFor(connection) : undefined;
+      const connectorSlug = String(connector?.slug ?? "");
+      const binding = (window as any).__googleConnectorBinding?.[connectorSlug];
+      const configKey: string = binding?.configKey ?? "";
+      const select = document.getElementById(`property-picker-${drawer.connectionId}`) as HTMLSelectElement | null;
+      const selectedId = select?.value ?? "";
+
+      if (selectedId && configKey) {
+        try {
+          const patchResult = await patchJson(`/admin/api/connections/${encodeURIComponent(drawer.connectionId)}`, {
+            configSummary: {
+              ...((connection?.configSummary as Record<string, string>) ?? {}),
+              [configKey]: selectedId
+            }
+          });
+          applyState(patchResult.state);
+        } catch (err) {
+          console.warn("[gateway] property patch failed:", err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      try {
+        await postJson("/admin/api/google-link", {
+          accountId: String(account.id),
+          connectionIds: [drawer.connectionId]
+        });
+      } catch (err) {
+        console.warn("[gateway] google-link warning:", err instanceof Error ? err.message : String(err));
+      }
+      drawer.step = 3;
+      if (drawer.mode === "edit") {
+        void triggerDrawerTest(drawer.connectionId);
+      }
+      render();
+      return;
+    }
+    if (action === "drawer-clear-property") {
+      const cId = button.dataset.connectionId;
+      const cfgKey = button.dataset.configKey;
+      if (!cId || !cfgKey) return;
+      if (uiState.propertyOptions) delete uiState.propertyOptions[cId];
+      const connection = byId("connections", cId);
+      if (connection && cfgKey) {
+        const updated = { ...((connection.configSummary as Record<string, string>) ?? {}) };
+        delete updated[cfgKey];
+        try {
+          const patchResult = await patchJson(`/admin/api/connections/${encodeURIComponent(cId)}`, {
+            configSummary: updated
+          });
+          applyState(patchResult.state);
+        } catch (_) { /* non-fatal */ }
       }
       render();
       return;
