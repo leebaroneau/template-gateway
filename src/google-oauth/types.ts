@@ -1,14 +1,15 @@
 // src/google-oauth/types.ts
 
-export type GoogleProduct = "ga4" | "gsc" | "google_ads" | "merchant_center";
+export type GoogleProduct = "ga4" | "gsc" | "google_ads" | "merchant_center" | "google_business";
 
-export const googleProducts: GoogleProduct[] = ["ga4", "gsc", "google_ads", "merchant_center"];
+export const googleProducts: GoogleProduct[] = ["ga4", "gsc", "google_ads", "merchant_center", "google_business"];
 
 export const googleProductScopes: Record<GoogleProduct, string> = {
   ga4: "https://www.googleapis.com/auth/analytics.readonly",
   gsc: "https://www.googleapis.com/auth/webmasters.readonly",
   google_ads: "https://www.googleapis.com/auth/adwords",
-  merchant_center: "https://www.googleapis.com/auth/content"
+  merchant_center: "https://www.googleapis.com/auth/content",
+  google_business: "https://www.googleapis.com/auth/business.manage"
 };
 
 export type GoogleCredentialStatus = "connected" | "needs_reconnect" | "error";
@@ -83,10 +84,11 @@ export const googleConnectorBinding: Record<
   string,
   { product: GoogleProduct; configKey: string }
 > = {
-  "google-analytics-4":    { product: "ga4",             configKey: "property_id" },
-  "google-search-console": { product: "gsc",             configKey: "site_url" },
-  "google-ads":            { product: "google_ads",      configKey: "customer_id" },
-  "merchant-center":       { product: "merchant_center", configKey: "merchant_center_id" }
+  "google-analytics-4":       { product: "ga4",             configKey: "property_id" },
+  "google-search-console":    { product: "gsc",             configKey: "site_url" },
+  "google-ads":               { product: "google_ads",      configKey: "customer_id" },
+  "merchant-center":          { product: "merchant_center", configKey: "merchant_center_id" },
+  "google-business-profile":  { product: "google_business", configKey: "location_name" }
 };
 
 export type GoogleLinkPlanStatus = "proposed" | "already_linked" | "unmatched";
