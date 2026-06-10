@@ -21,6 +21,7 @@ import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
 import { GatewayAppInstallStore } from "./apps/store.js";
 import { GatewayAccountStore } from "./account-credentials/store.js";
 import { GoogleAccountLinker } from "./google-oauth/linker.js";
+import { GooglePropertyEnumerator } from "./google-oauth/enumerator.js";
 import { ComposioConnectorAdapter } from "./connectors/composio.js";
 import { NangoConnectorAdapter } from "./connectors/nango.js";
 import { ConnectorAdapterRegistry } from "./connectors/registry.js";
@@ -89,7 +90,11 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     ? new GoogleAccountLinker(adminBackend, accountStore, googleStore, googleAdapter, accessStore)
     : undefined;
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker));
+  const googleEnumerator = config.googleOAuth && googleAdapter && googleStore
+    ? new GooglePropertyEnumerator(googleAdapter, accountStore, googleStore, config.googleAdsDevToken)
+    : undefined;
+
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker, googleEnumerator));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry, mcpConnectionBaseUrl: config.mcpConnectionBaseUrl }));
   app.use(
     "/mcp/v1/connections/:connectionId",
