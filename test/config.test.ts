@@ -153,6 +153,18 @@ describe("loadConfig", () => {
     expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
   });
 
+  it("uses the deployment data volume as the production store default", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "haverford",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      NODE_ENV: "production"
+    });
+
+    expect(cfg.adminDataSource).toBe("fixture");
+    expect(cfg.gatewayStorePath).toBe("/data/gateway.sqlite");
+  });
+
   it("uses the deployment data volume as the production overlay store default", () => {
     const cfg = loadConfig({
       COMPOSIO_API_KEY: "ak_test",
