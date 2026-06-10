@@ -69,6 +69,13 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     supportedSlugs: config.composioAdapterSlugs
   }));
 
+  if (process.env.NODE_ENV !== "production") {
+    app.use((req: Request, _res: Response, next: express.NextFunction) => {
+      console.log(`[gateway] ${req.method} ${req.path}`);
+      next();
+    });
+  }
+
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
       status: "ok",
@@ -78,7 +85,11 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     });
   });
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry));
+  const googleLinker = config.googleOAuth && googleAdapter && googleStore
+    ? new GoogleAccountLinker(adminBackend, accountStore, googleStore, googleAdapter, accessStore)
+    : undefined;
+
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry, mcpConnectionBaseUrl: config.mcpConnectionBaseUrl }));
   app.use(
     "/mcp/v1/connections/:connectionId",
@@ -100,10 +111,6 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
       appInstallStore
     })
   );
-
-  const googleLinker = config.googleOAuth && googleAdapter && googleStore
-    ? new GoogleAccountLinker(adminBackend, accountStore, googleStore, googleAdapter, accessStore)
-    : undefined;
 
   app.use(
     "/oauth/google",

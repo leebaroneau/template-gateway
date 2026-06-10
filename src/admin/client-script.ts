@@ -28,6 +28,7 @@ function adminClientApp() {
     secretReveal: SecretReveal | null;
     appInstalls?: Item[];
     allConnectors?: Item[];
+    googleAccounts?: Item[];
     drawer: DrawerState;
   };
 
@@ -264,9 +265,24 @@ function adminClientApp() {
 
   async function refreshState(): Promise<void> {
     clearError();
-    const state = await requestJson("/admin/api/state");
+    const [state, accountsRes] = await Promise.all([
+      requestJson("/admin/api/state"),
+      requestJson("/admin/api/google-accounts").catch(() => ({ accounts: [] }))
+    ]);
     applyState(state);
+    uiState.googleAccounts = (accountsRes.accounts as Item[] | undefined) ?? [];
     // Restore drawer state if returning from OAuth redirect
+    const urlParams = typeof window !== "undefined" && window.location
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+    const oauthAccount = urlParams.get("oauth_account");
+    const oauthError = urlParams.get("oauth_error");
+    if ((oauthAccount !== null || oauthError !== null) && typeof window !== "undefined" && window.history) {
+      window.history.replaceState({}, "", "/admin");
+    }
+    if (oauthError) {
+      showError(`OAuth failed: ${oauthError}`);
+    }
     const drawerReturnRaw = typeof sessionStorage !== "undefined" ? sessionStorage.getItem("drawerReturn") : null;
     if (drawerReturnRaw) {
       try {
@@ -276,7 +292,7 @@ function adminClientApp() {
           open: true,
           mode: saved.mode ?? "edit",
           connectionId: saved.connectionId ?? null,
-          step: (saved.step as 1 | 2 | 3) ?? 2,
+          step: oauthError ? 2 : 3,
           testState: "idle",
           testDetail: null,
           pendingConnectorId: saved.pendingConnectorId ?? null
@@ -588,24 +604,39 @@ function adminClientApp() {
 
     if (drawer.step === 1) {
       const skipAuth = authMode === "none";
-      return `<button class="btn btn-primary" type="submit" form="drawer-step1-form">${skipAuth ? "Next: Test →" : "Next: Auth →"}</button>
-              <button class="btn" type="button" data-action="close-drawer">Cancel</button>`;
+      return `<button class="btn" type="button" data-action="close-drawer">Cancel</button>
+              <div class="footer-right">
+                <button class="btn btn-primary" type="submit" form="drawer-step1-form">${skipAuth ? "Next: Test →" : "Next: Auth →"}</button>
+              </div>`;
     }
 
     if (drawer.step === 2) {
+      const backBtn = `<button class="btn" type="button" data-action="drawer-back">← Back</button>`;
       if (authMode === "oauth") {
-        return `${isConnected
-          ? `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>`
-          : `<button class="btn" type="button" data-action="drawer-next" title="Skip and keep existing auth">Skip →</button>`}
-                <button class="btn" type="button" data-action="drawer-back">← Back</button>`;
+        const slug = String(connector?.slug ?? "");
+        const isGoogle = slug.startsWith("google");
+        const hasGoogleAccount = isGoogle && (uiState.googleAccounts ?? []).length > 0;
+        if (hasGoogleAccount) {
+          return `${backBtn}
+                  <div class="footer-right">
+                    <button class="btn btn-primary" type="button" data-action="drawer-use-google-account">Next: Test →</button>
+                  </div>`;
+        }
+        return `${backBtn}
+                <div class="footer-right">
+                  ${isConnected
+                    ? `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>`
+                    : `<button class="btn" type="button" data-action="drawer-next" title="Skip and keep existing auth">Skip →</button>`}
+                </div>`;
       }
       const hasSecretFields = authMode === "service_account" || ((connector?.requiredFields ?? []) as Item[]).some((f) => f.secret);
-      if (hasSecretFields) {
-        return `<button class="btn btn-primary" type="submit" form="drawer-step2-form">Next: Test →</button>
-                <button class="btn" type="button" data-action="drawer-back">← Back</button>`;
-      }
-      return `<button class="btn btn-primary" type="button" data-action="drawer-next">Next: Test →</button>
-              <button class="btn" type="button" data-action="drawer-back">← Back</button>`;
+      return `${backBtn}
+              <div class="footer-right">
+                <button class="${hasSecretFields ? "btn btn-primary" : "btn btn-primary"}"
+                  ${hasSecretFields ? `type="submit" form="drawer-step2-form"` : `type="button" data-action="drawer-next"`}>
+                  Next: Test →
+                </button>
+              </div>`;
     }
 
     // Step 3
@@ -621,7 +652,8 @@ function adminClientApp() {
            ${drawer.testState === "failed" ? "Retry test" : "Run test"}
          </button>`
       : "";
-    return `${saveBtn}${retestBtn}<button class="btn" type="button" data-action="drawer-back">← Back</button>`;
+    return `<button class="btn" type="button" data-action="drawer-back">← Back</button>
+            <div class="footer-right">${retestBtn}${saveBtn}</div>`;
   }
 
   function renderDrawerStep1(connection: Item | undefined, connector: Item | undefined): string {
@@ -676,6 +708,34 @@ function adminClientApp() {
 
     // OAuth connectors (Shopify, Google, etc.)
     if (authMode === "oauth") {
+      const slug = String(connector?.slug ?? "");
+      const isGoogle = slug.startsWith("google");
+
+      // Google: show existing account card if one exists
+      if (isGoogle) {
+        const accounts = uiState.googleAccounts ?? [];
+        const linkedAccount = accounts.find((a) => a.status === "connected") ?? accounts[0];
+
+        if (linkedAccount) {
+          const email = h(String(linkedAccount.externalAccountId ?? linkedAccount.displayName ?? "Google account"));
+          const statusIcon = String(linkedAccount.status) === "connected" ? "✓" : "⚠";
+          const statusColor = String(linkedAccount.status) === "connected" ? "var(--success)" : "var(--warning)";
+          return `<div class="wizard-body">
+            <div class="oauth-status oauth-status--connected" style="margin-bottom:12px">
+              <strong style="color:${statusColor}">${statusIcon} ${email}</strong>
+              <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">Google account ready to use</div>
+            </div>
+            <input type="hidden" id="google-account-id" value="${h(String(linkedAccount.id))}">
+            <button class="btn btn-link" type="button"
+                    style="font-size:.8rem;padding:0;color:var(--muted)"
+                    data-action="drawer-oauth-start"
+                    data-oauth-path="/oauth/google/account/start">
+              ↺ Use a different Google account
+            </button>
+          </div>`;
+        }
+      }
+
       const statusHtml = isConnected
         ? `<div class="oauth-status oauth-status--connected">
              <strong style="color:var(--success)">✓ Connected</strong>
@@ -689,8 +749,7 @@ function adminClientApp() {
            </div>`;
 
       // Determine OAuth start URL per connector slug
-      const slug = String(connector?.slug ?? "");
-      const oauthStartPath = slug.startsWith("google")
+      const oauthStartPath = isGoogle
         ? "/oauth/google/account/start"
         : slug === "shopify"
           ? "/oauth/shopify/start"
@@ -1566,6 +1625,34 @@ function adminClientApp() {
       if (response.redirectUrl) {
         window.location.href = response.redirectUrl as string;
       }
+      return;
+    }
+    if (action === "drawer-use-google-account") {
+      const { drawer } = uiState;
+      const accounts = uiState.googleAccounts ?? [];
+      const account = accounts.find((a) => a.status === "connected") ?? accounts[0];
+      if (!account) {
+        showError("No Google account found. Please authenticate first.");
+        return;
+      }
+      // Link this account to the current connection
+      if (drawer.connectionId) {
+        try {
+          await postJson("/admin/api/google-link", {
+            accountId: String(account.id),
+            connectionIds: [drawer.connectionId]
+          });
+        } catch (err) {
+          // Non-fatal: if already linked or link fails, still advance — test step will surface the error
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn("[gateway] google-link warning:", msg);
+        }
+      }
+      drawer.step = 3;
+      if (drawer.mode === "edit" && drawer.connectionId) {
+        void triggerDrawerTest(drawer.connectionId);
+      }
+      render();
       return;
     }
     if (action === "drawer-test" && button.dataset.connectionId) {

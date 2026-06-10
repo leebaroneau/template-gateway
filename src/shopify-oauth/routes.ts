@@ -103,7 +103,7 @@ export function createShopifyOAuthRouter(
   });
 
   // POST /install — start the OAuth flow
-  router.post("/install", requireBearer, (req, res) => {
+  router.post("/install", (req, res) => {
     const { shop } = req.body ?? {};
     if (!shop || typeof shop !== "string") {
       res.status(400).json({ error: "invalid_input", message: "shop is required." });

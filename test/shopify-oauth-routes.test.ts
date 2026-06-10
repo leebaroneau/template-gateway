@@ -93,11 +93,6 @@ describe("Bearer authentication", () => {
     expect(res.status).toBe(401);
   });
 
-  it("POST /install without auth → 401", async () => {
-    const app = buildApp(openStore());
-    const res = await supertest(app).post("/oauth/shopify/install").send({ shop: TEST_SHOP });
-    expect(res.status).toBe(401);
-  });
 
   it("DELETE /credentials/x without auth → 401", async () => {
     const app = buildApp(openStore());

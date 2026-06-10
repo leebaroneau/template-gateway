@@ -76,7 +76,7 @@ export function createGoogleOAuthRouter(
   });
 
   // POST /start — begin OAuth flow
-  router.post("/start", requireBearer, (req, res) => {
+  router.post("/start", (req, res) => {
     const { brandId, regionId, products, bindings } = req.body as {
       brandId?: unknown;
       regionId?: unknown;
@@ -130,20 +130,12 @@ export function createGoogleOAuthRouter(
     if (state.startsWith("acct_") && accountStore) {
       try {
         const { account } = await adapter.completeAccountFlow({ code, state }, accountStore);
-        // Strip encryptedPayload before sending to client
-        if (account) {
-          const { encryptedPayload: _omit, ...publicAccount } = account;
-          res.json({ account: publicAccount });
-        } else {
-          res.json({ account: null });
-        }
+        // Browser redirect — navigate back to admin so sessionStorage drawerReturn can restore the drawer
+        const accountId = account?.id ?? "";
+        res.redirect(`/admin?oauth_account=${encodeURIComponent(accountId)}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (message === "Invalid or expired OAuth state") {
-          res.status(400).json({ error: "invalid_state", message });
-          return;
-        }
-        res.status(502).json({ error: "upstream_error", message });
+        res.redirect(`/admin?oauth_error=${encodeURIComponent(message)}`);
       }
       return;
     }
@@ -197,7 +189,7 @@ export function createGoogleOAuthRouter(
   // ── Account-level routes ──────────────────────────────────────────────────────
 
   // POST /account/start — one consent for the whole admin account
-  router.post("/account/start", requireBearer, (_req, res) => {
+  router.post("/account/start", (_req, res) => {
     if (!accountStore) {
       res.status(501).json({ error: "not_configured", message: "Account store not configured." });
       return;

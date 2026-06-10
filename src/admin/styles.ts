@@ -863,6 +863,11 @@ textarea {
   gap: 8px;
   flex-shrink: 0;
   background: var(--panel);
+  justify-content: space-between;
+}
+.wizard-footer .footer-right {
+  display: flex;
+  gap: 8px;
 }
 
 .test-result {

@@ -3,6 +3,8 @@ import type { Request, Response } from "express";
 import type { GatewayAccessStore } from "../access/store.js";
 import type { GatewayAppInstallStore } from "../apps/store.js";
 import type { ConnectorAdapterRegistry } from "../connectors/registry.js";
+import type { GatewayAccountStore } from "../account-credentials/store.js";
+import type { GoogleAccountLinker } from "../google-oauth/linker.js";
 import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
@@ -113,7 +115,9 @@ export function createAdminRouter(
   backend: GatewayConnectionBackend = new FixtureGatewayBackend(),
   accessStore?: GatewayAccessStore,
   appInstallStore?: GatewayAppInstallStore,
-  connectorRegistry?: ConnectorAdapterRegistry
+  connectorRegistry?: ConnectorAdapterRegistry,
+  accountStore?: GatewayAccountStore,
+  googleLinker?: GoogleAccountLinker
 ): express.Router {
   const router = express.Router();
 
@@ -154,6 +158,48 @@ export function createAdminRouter(
       res.json(await snapshotForResponse());
     } catch (error) {
       sendError(res, error);
+    }
+  });
+
+  // Google account helpers — no bearer needed (auth-gate secures /admin/*)
+  router.get("/api/google-accounts", (_req: Request, res: Response) => {
+    if (!accountStore) {
+      res.json({ accounts: [] });
+      return;
+    }
+    const accounts = accountStore.listAccounts("google").map(({ id, service, externalAccountId, displayName, status, tokenExpiryAt, createdAt, updatedAt }) =>
+      ({ id, service, externalAccountId, displayName, status, tokenExpiryAt, createdAt, updatedAt })
+    );
+    res.json({ accounts });
+  });
+
+  router.post("/api/google-link", async (req: Request, res: Response) => {
+    if (!accountStore || !googleLinker) {
+      res.status(501).json({ error: "not_configured", message: "Google account linker not configured." });
+      return;
+    }
+    try {
+      const body = req.body as { accountId?: string; connectionIds?: string[] };
+      let accountId = body.accountId;
+      if (!accountId) {
+        const accounts = accountStore.listAccounts("google");
+        if (accounts.length === 1) {
+          accountId = accounts[0].id;
+        } else {
+          res.status(400).json({ error: "invalid_input", message: "accountId required when multiple accounts exist." });
+          return;
+        }
+      }
+      const result = await googleLinker.applyLinks(accountId, { connectionIds: body.connectionIds });
+      res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: string }).code;
+      if (code === "not_found") {
+        res.status(404).json({ error: "not_found", message });
+        return;
+      }
+      res.status(502).json({ error: "upstream_error", message });
     }
   });
 

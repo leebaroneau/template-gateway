@@ -166,11 +166,6 @@ function startAccountFlow(googleStore: GatewayGoogleStore): string {
 }
 
 describe("POST /oauth/google/account/start", () => {
-  it("returns 401 without bearer", async () => {
-    const { app } = buildApp();
-    const res = await supertest(app).post("/oauth/google/account/start");
-    expect(res.status).toBe(401);
-  });
 
   it("returns redirectUrl and state with acct_ prefix", async () => {
     const { app } = buildApp();
@@ -190,25 +185,23 @@ describe("GET /oauth/google/account/callback (account flow)", () => {
 
     const res = await supertest(app)
       .get(`/oauth/google/callback?code=authcode&state=${state}`);
-    expect(res.status).toBe(200);
-    expect(res.body.account).toBeDefined();
-    expect(res.body.account.encryptedPayload).toBeUndefined();
-    expect(res.body.account.service).toBe("google");
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toMatch(/^\/admin\?oauth_account=/);
     expect(accountStore.listAccounts("google")).toHaveLength(1);
+    const accounts = accountStore.listAccounts("google");
+    expect(accounts[0].service).toBe("google");
   });
 
   it("second callback for same email upserts (same account id returned)", async () => {
     const { app, accountStore, googleStore } = buildApp([], vi.fn() as unknown as typeof fetch);
 
     const state1 = startAccountFlow(googleStore);
-    const r1 = await supertest(app)
-      .get(`/oauth/google/callback?code=authcode&state=${state1}`);
-    const id1 = r1.body.account?.id;
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state1}`);
+    const id1 = accountStore.listAccounts("google")[0]?.id;
 
     const state2 = startAccountFlow(googleStore);
-    const r2 = await supertest(app)
-      .get(`/oauth/google/callback?code=authcode&state=${state2}`);
-    const id2 = r2.body.account?.id;
+    await supertest(app).get(`/oauth/google/callback?code=authcode&state=${state2}`);
+    const id2 = accountStore.listAccounts("google")[0]?.id;
 
     expect(id1).toBe(id2);
     expect(accountStore.listAccounts("google")).toHaveLength(1);
@@ -221,10 +214,11 @@ describe("GET /oauth/google/account/callback (account flow)", () => {
     expect(googleStore.listCredentials()).toHaveLength(0);
   });
 
-  it("returns 400 for invalid state", async () => {
+  it("redirects with oauth_error for invalid state", async () => {
     const { app } = buildApp();
     const res = await supertest(app).get("/oauth/google/callback?code=code&state=acct_bad_state");
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toMatch(/oauth_error=/);
   });
 });
 
