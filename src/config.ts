@@ -25,6 +25,7 @@ export interface GatewayConfig {
   mcpConnectionBaseUrl?: string;
   googleOAuth?: GoogleOAuthConfig;
   shopifyOAuth?: ShopifyOAuthConfig;
+  googleAdsDevToken?: string;
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -183,5 +184,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     mcpConnectionBaseUrl: optionalEnv(env, "MCP_CONNECTION_BASE_URL"),
     googleOAuth: parseGoogleOAuthConfig(env),
     shopifyOAuth: parseShopifyOAuthConfig(env),
+    googleAdsDevToken: optionalEnv(env, "GOOGLE_ADS_DEVELOPER_TOKEN"),
   };
 }
