@@ -21,6 +21,9 @@ describe("loadConfig", () => {
     delete process.env.HAVERFORD_DEV_API_CLIENT_SECRET;
     delete process.env.MCP_AUTH_GATE_ALLOWED_DOMAINS;
     delete process.env.MCP_AUTH_GATE_ALLOWED_USERS;
+    delete process.env.PIPEDRIVE_API_TOKEN;
+    delete process.env.PIPEDRIVE_COMPANY_DOMAIN;
+    delete process.env.PIPEDRIVE_FACADE_ALLOW_WRITES;
     delete process.env.GOOGLE_OAUTH_CLIENT_ID;
     delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
     delete process.env.GOOGLE_OAUTH_REDIRECT_URI;
@@ -57,6 +60,11 @@ describe("loadConfig", () => {
     expect(cfg.gatewayStorePath).toBe("./data/gateway.sqlite");
     expect(cfg.mcpAuthGateAllowedDomains).toBeUndefined();
     expect(cfg.mcpAuthGateAllowedUsers).toBeUndefined();
+    expect(cfg.pipedriveFacade).toEqual({
+      apiToken: undefined,
+      companyDomain: undefined,
+      allowWrites: false
+    });
   });
 
   it("leaves MCP Auth Gate allowlists disabled by default", () => {
@@ -203,6 +211,32 @@ describe("loadConfig", () => {
       microsoft_clarity: "ac_clar",
       pipedrive: "ac_pipe"
     });
+  });
+
+  it("parses the optional deterministic Pipedrive facade config", () => {
+    const cfg = loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "genvest",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      PIPEDRIVE_API_TOKEN: " pd_token ",
+      PIPEDRIVE_COMPANY_DOMAIN: " genvestpropertyptyltd ",
+      PIPEDRIVE_FACADE_ALLOW_WRITES: "true"
+    });
+
+    expect(cfg.pipedriveFacade).toEqual({
+      apiToken: "pd_token",
+      companyDomain: "genvestpropertyptyltd",
+      allowWrites: true
+    });
+  });
+
+  it("rejects invalid Pipedrive facade boolean values", () => {
+    expect(() => loadConfig({
+      COMPOSIO_API_KEY: "ak_test",
+      BRAND_SLUG: "genvest",
+      GATEWAY_BEARER: "a_secret_thats_long_enough",
+      PIPEDRIVE_FACADE_ALLOW_WRITES: "maybe"
+    })).toThrow(/Boolean env var/);
   });
 
   it("rejects malformed AUTH_CONFIGS entries", () => {
