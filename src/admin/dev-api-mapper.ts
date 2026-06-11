@@ -188,6 +188,22 @@ const serviceDefinitions: ServiceConnectorDefinition[] = [
     },
     backendType: "internal",
     fallbackDisplayName: "DataForSEO"
+  },
+  {
+    serviceKey: "google_business",
+    connector: {
+      id: "connector_google_business_profile",
+      slug: "google-business-profile",
+      name: "Google Business Profile",
+      category: "analytics",
+      authMode: "oauth",
+      backendOptions: ["internal", "native"],
+      requiredFields: [{ key: "location_name", label: "Location resource name", example: "accounts/123/locations/456" }],
+      scopes: ["business.manage"],
+      description: "Google Business Profile locations and reviews."
+    },
+    backendType: "internal",
+    fallbackDisplayName: "Google Business Profile"
   }
 ];
 

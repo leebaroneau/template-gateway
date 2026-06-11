@@ -456,6 +456,41 @@ export class GoogleOAuthAdapter {
     });
   }
 
+  // Mint a fresh access token from the account refresh token.
+  // Does NOT persist anything — for use by GooglePropertyEnumerator only.
+  async getAccountAccessToken(
+    accountId: string,
+    accountStore: GatewayAccountStore,
+    fetchFn: typeof fetch = fetch
+  ): Promise<string> {
+    const account = accountStore.getAccount(accountId);
+    if (!account) throw new Error(`Account not found: ${accountId}`);
+
+    const payload = decryptAccountCredential(account.encryptedPayload, this.config.encryptionKey);
+    if (!payload.refreshToken) throw new Error("Account has no refresh token");
+
+    const params = new URLSearchParams({
+      client_id: this.config.clientId,
+      client_secret: this.config.clientSecret,
+      refresh_token: payload.refreshToken,
+      grant_type: "refresh_token"
+    });
+
+    const response = await fetchFn(GOOGLE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString()
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Token mint failed: ${response.status} ${text.slice(0, 512)}`);
+    }
+
+    const data = (await response.json()) as TokenResponse;
+    return data.access_token;
+  }
+
   // Called by GoogleAccountLinker. Refreshes an account-level credential by
   // using the account refresh token, then fans the new access token out to all
   // linked connection credentials sharing this accountId.

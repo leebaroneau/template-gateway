@@ -27,6 +27,7 @@ export interface GatewayConfig {
   pipedriveFacade?: PipedriveFacadeConfig;
   googleOAuth?: GoogleOAuthConfig;
   shopifyOAuth?: ShopifyOAuthConfig;
+  googleAdsDevToken?: string;
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -198,5 +199,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     },
     googleOAuth: parseGoogleOAuthConfig(env),
     shopifyOAuth: parseShopifyOAuthConfig(env),
+    googleAdsDevToken: optionalEnv(env, "GOOGLE_ADS_DEVELOPER_TOKEN"),
   };
 }

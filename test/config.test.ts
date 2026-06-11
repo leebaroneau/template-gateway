@@ -338,4 +338,18 @@ describe("loadConfig", () => {
       ).toThrow(/SHOPIFY_OAUTH_API_SECRET/);
     });
   });
+
+  it("reads GOOGLE_ADS_DEVELOPER_TOKEN when set", () => {
+    const cfg = loadConfig({
+      BRAND_SLUG: "test",
+      GATEWAY_BEARER: "test-bearer",
+      GOOGLE_ADS_DEVELOPER_TOKEN: "dev-token-abc"
+    });
+    expect(cfg.googleAdsDevToken).toBe("dev-token-abc");
+  });
+
+  it("googleAdsDevToken is undefined when not set", () => {
+    const cfg = loadConfig({ BRAND_SLUG: "test", GATEWAY_BEARER: "test-bearer" });
+    expect(cfg.googleAdsDevToken).toBeUndefined();
+  });
 });

@@ -5,6 +5,8 @@ import type { GatewayAppInstallStore } from "../apps/store.js";
 import type { ConnectorAdapterRegistry } from "../connectors/registry.js";
 import type { GatewayAccountStore } from "../account-credentials/store.js";
 import type { GoogleAccountLinker } from "../google-oauth/linker.js";
+import type { GooglePropertyEnumerator } from "../google-oauth/enumerator.js";
+import { googleConnectorBinding } from "../google-oauth/types.js";
 import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
 import { FixtureGatewayBackend } from "./fixture-backend.js";
@@ -117,7 +119,8 @@ export function createAdminRouter(
   appInstallStore?: GatewayAppInstallStore,
   connectorRegistry?: ConnectorAdapterRegistry,
   accountStore?: GatewayAccountStore,
-  googleLinker?: GoogleAccountLinker
+  googleLinker?: GoogleAccountLinker,
+  googleEnumerator?: GooglePropertyEnumerator
 ): express.Router {
   const router = express.Router();
 
@@ -199,6 +202,59 @@ export function createAdminRouter(
         res.status(404).json({ error: "not_found", message });
         return;
       }
+      res.status(502).json({ error: "upstream_error", message });
+    }
+  });
+
+  router.get("/api/google-properties", async (req: Request, res: Response) => {
+    if (!accountStore || !googleEnumerator) {
+      res.status(501).json({ error: "not_configured", message: "Google property enumerator not configured." });
+      return;
+    }
+    try {
+      const accountId = String(req.query.accountId ?? "");
+      const connectorSlug = String(req.query.connectorSlug ?? "");
+      const connectionId = req.query.connectionId ? String(req.query.connectionId) : undefined;
+
+      const binding = googleConnectorBinding[connectorSlug];
+      if (!binding) {
+        res.status(400).json({ error: "unknown_connector", message: `Unknown connector slug: ${connectorSlug}` });
+        return;
+      }
+
+      const { product, configKey } = binding;
+
+      // Build claimed map: resourceId -> connectionId for connections already linked
+      // to this accountId for the same product (excluding the current connectionId).
+      const state = await backend.snapshot();
+      const connectorMap = new Map(state.connectors.map((c) => [c.id, c]));
+      const claimedMap = new Map<string, string>();
+
+      for (const conn of state.connections) {
+        if (conn.id === connectionId) continue; // exclude current — allow re-pick
+        const connDef = connectorMap.get(conn.connectorId);
+        if (!connDef) continue;
+        const b = googleConnectorBinding[connDef.slug];
+        if (!b || b.product !== product) continue;
+        const existingLink = accountStore.getLinkForScope({
+          service: "google",
+          brandId: conn.brandId,
+          regionId: conn.regionId,
+          connectorSlug: connDef.slug
+        });
+        if (existingLink && existingLink.accountId === accountId) {
+          const resourceId = conn.configSummary[configKey];
+          if (resourceId) claimedMap.set(String(resourceId), conn.id);
+        }
+      }
+
+      const properties = await googleEnumerator.listProperties(
+        accountId, product, claimedMap, fetch
+      );
+      noStore(res);
+      res.json({ properties });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       res.status(502).json({ error: "upstream_error", message });
     }
   });
