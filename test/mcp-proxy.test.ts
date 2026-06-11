@@ -21,6 +21,29 @@ function buildApp(opts: { fetchImpl: typeof fetch; bearer?: string }) {
   return { app, cache };
 }
 
+function buildAppWithPipedriveFacade(opts: { fetchImpl: typeof fetch; bearer?: string }) {
+  const cache = new SessionCache(
+    vi.fn(async () => ({ url: "https://upstream/mcp/session", headers: { "x-api-key": "ak_test" } })),
+    { ttlSeconds: 60 }
+  );
+  const app = express();
+  app.disable("x-powered-by");
+  const router = express.Router();
+  router.use(express.json());
+  router.use(bearerAuth(opts.bearer ?? "a_secret_thats_long_enough"));
+  router.use(actorContext("brand-default"));
+  router.post("/", (req, res) => forwardJsonRpc(req, res, {
+    cache,
+    fetchImpl: opts.fetchImpl,
+    pipedriveFacade: {
+      apiToken: "pd_test_token",
+      companyDomain: "genvestpropertyptyltd"
+    }
+  }));
+  app.use("/mcp", router);
+  return { app, cache };
+}
+
 function makeFetch(response: { status: number; body: string; headers?: Record<string, string> }): typeof fetch {
   return vi.fn(async () =>
     new Response(response.body, {
@@ -134,5 +157,99 @@ describe("forwardJsonRpc", () => {
 
     expect(res.status).toBe(404);
     expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("adds deterministic pipedrive tools to /mcp tools/list when the facade is configured", async () => {
+    const upstreamFetch = makeFetch({
+      status: 200,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { tools: [{ name: "COMPOSIO_SEARCH_TOOLS", inputSchema: { type: "object" } }] }
+      })
+    });
+    const { app } = buildAppWithPipedriveFacade({ fetchImpl: upstreamFetch });
+
+    const res = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer a_secret_thats_long_enough")
+      .set("X-Composio-User-Id", "user-marketing")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.result.tools.map((tool: { name: string }) => tool.name)).toContain("COMPOSIO_SEARCH_TOOLS");
+    expect(res.body.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_api_request");
+    expect(res.body.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_pipeline_shape");
+  });
+
+  it("adds deterministic pipedrive tools to SSE tools/list responses", async () => {
+    const upstreamFetch = makeFetch({
+      status: 200,
+      headers: { "content-type": "text/event-stream; charset=utf-8" },
+      body: `event: message\ndata: ${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { tools: [{ name: "COMPOSIO_SEARCH_TOOLS", inputSchema: { type: "object" } }] }
+      })}\n\n`
+    });
+    const { app } = buildAppWithPipedriveFacade({ fetchImpl: upstreamFetch });
+
+    const res = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer a_secret_thats_long_enough")
+      .set("Accept", "application/json, text/event-stream")
+      .set("X-Composio-User-Id", "user-marketing")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const dataLine = res.text.split(/\r?\n/).find((line) => line.startsWith("data: "));
+    const payload = JSON.parse(dataLine?.slice("data: ".length) ?? "{}");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toContain("COMPOSIO_SEARCH_TOOLS");
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_api_request");
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toContain("pipedrive_pipeline_shape");
+  });
+
+  it("handles deterministic pipedrive tool calls at the gateway edge", async () => {
+    const upstreamFetch = vi.fn(async (url: string) => {
+      if (url.startsWith("https://upstream/")) {
+        return new Response("{}", { status: 500 });
+      }
+      if (url.includes("/api/v1/pipelines")) {
+        return new Response(JSON.stringify({ success: true, data: [{ id: 2, name: "Customer Onboarding" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/api/v1/stages")) {
+        return new Response(JSON.stringify({ success: true, data: [{ id: 10, name: "Booked", pipeline_id: 2 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+    const { app } = buildAppWithPipedriveFacade({ fetchImpl: upstreamFetch });
+
+    const res = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer a_secret_thats_long_enough")
+      .set("X-Composio-User-Id", "user-marketing")
+      .send({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "pipedrive_pipeline_shape", arguments: {} }
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.result.structuredContent).toMatchObject({
+      pipelines: [{ id: 2, name: "Customer Onboarding" }],
+      stages: [{ id: 10, name: "Booked", pipeline_id: 2 }]
+    });
+    expect(upstreamFetch).not.toHaveBeenCalledWith(
+      "https://upstream/mcp/session",
+      expect.anything()
+    );
   });
 });

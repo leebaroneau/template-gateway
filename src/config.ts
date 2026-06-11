@@ -1,5 +1,6 @@
 import "dotenv/config";
 import type { GoogleOAuthConfig } from "./google-oauth/adapter.js";
+import type { PipedriveFacadeConfig } from "./pipedrive-facade.js";
 import type { ShopifyOAuthConfig } from "./shopify-oauth/adapter.js";
 
 export type AdminDataSource = "fixture" | "dev-api" | "fixture-overlay" | "dev-api-overlay" | "gateway-store";
@@ -23,6 +24,7 @@ export interface GatewayConfig {
   mcpAuthGateAllowedDomains?: string[];
   mcpAuthGateAllowedUsers?: string[];
   mcpConnectionBaseUrl?: string;
+  pipedriveFacade?: PipedriveFacadeConfig;
   googleOAuth?: GoogleOAuthConfig;
   shopifyOAuth?: ShopifyOAuthConfig;
 }
@@ -93,6 +95,14 @@ function parseSessionTtl(raw?: string): number {
   return Math.floor(n);
 }
 
+function parseBoolean(raw?: string, defaultValue = false): boolean {
+  if (!raw) return defaultValue;
+  const value = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  throw new Error(`Boolean env var must be true/false/1/0/yes/no/on/off (got ${raw})`);
+}
+
 function parseAdminDataSource(raw?: string): AdminDataSource {
   if (!raw) return "fixture";
   const value = raw.trim().toLowerCase();
@@ -113,10 +123,10 @@ function parseGatewayStorePath(env: NodeJS.ProcessEnv, dataSource: AdminDataSour
   if (configured) {
     return configured;
   }
+  if (env.NODE_ENV === "production") {
+    return "/data/gateway.sqlite";
+  }
   if (dataSource === "fixture-overlay" || dataSource === "dev-api-overlay") {
-    if (env.NODE_ENV === "production") {
-      return "/data/gateway.sqlite";
-    }
     return "./data/gateway.sqlite";
   }
   return "./data/gateway.sqlite";
@@ -181,6 +191,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     mcpAuthGateAllowedDomains: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_DOMAINS),
     mcpAuthGateAllowedUsers: parseCommaList(env.MCP_AUTH_GATE_ALLOWED_USERS),
     mcpConnectionBaseUrl: optionalEnv(env, "MCP_CONNECTION_BASE_URL"),
+    pipedriveFacade: {
+      apiToken: optionalEnv(env, "PIPEDRIVE_API_TOKEN"),
+      companyDomain: optionalEnv(env, "PIPEDRIVE_COMPANY_DOMAIN"),
+      allowWrites: parseBoolean(env.PIPEDRIVE_FACADE_ALLOW_WRITES)
+    },
     googleOAuth: parseGoogleOAuthConfig(env),
     shopifyOAuth: parseShopifyOAuthConfig(env),
   };

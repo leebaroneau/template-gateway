@@ -236,8 +236,16 @@ mybrand:
 | `MCP_AUTH_GATE_ALLOWED_DOMAINS` | no | Comma-separated domain allowlist for optional `/mcp/v1` Auth Gate identity access |
 | `MCP_AUTH_GATE_ALLOWED_USERS` | no | Comma-separated email allowlist for optional `/mcp/v1` Auth Gate identity access |
 | `TOOLKIT_ALLOWLIST` | no | Comma-separated, e.g. `outlook,one_drive,pipedrive` — defaults to all toolkits the API key sees |
+| `PIPEDRIVE_API_TOKEN` | no | Enables the deterministic `/mcp` Pipedrive facade when paired with `PIPEDRIVE_COMPANY_DOMAIN` |
+| `PIPEDRIVE_COMPANY_DOMAIN` | no | Pipedrive company domain or full URL used by the deterministic facade, e.g. `genvestpropertyptyltd` |
+| `PIPEDRIVE_FACADE_ALLOW_WRITES` | no | Defaults to `false`; set `true` only for deployments allowed to perform write-path Pipedrive tool calls |
 | `PORT` | no | Default `3000` |
 | `SESSION_TTL_SECONDS` | no | Tool Router session cache TTL; default `3600`, min `60` |
+
+When the deterministic Pipedrive facade is configured, `/mcp` still proxies the
+Composio Tool Router, but `tools/list` also includes stable `pipedrive_*` tools
+for skill recipes. Facade calls use Pipedrive REST directly and avoid runtime
+tool discovery through `COMPOSIO_SEARCH_TOOLS`.
 
 ## When to use this repo
 

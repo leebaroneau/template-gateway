@@ -141,7 +141,10 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     mcpRouter.use(bearerAuth(config.gatewayBearer));
     mcpRouter.use(actorContext(config.brandSlug));
 
-    const mcpHandler = (req: Request, res: Response) => forwardJsonRpc(req, res, { cache });
+    const mcpHandler = (req: Request, res: Response) => forwardJsonRpc(req, res, {
+      cache,
+      pipedriveFacade: config.pipedriveFacade
+    });
     mcpRouter.post("/", mcpHandler);
     mcpRouter.delete("/", mcpHandler);
 
