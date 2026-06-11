@@ -28,7 +28,9 @@ function adminClientApp() {
     secretReveal: SecretReveal | null;
     appInstalls?: Item[];
     allConnectors?: Item[];
+    accounts?: Item[];
     googleAccounts?: Item[];
+    oauthLinks?: Item[];
     propertyOptions?: Record<string, Item[]>;
     propertyLoading?: Set<string>;
     drawer: DrawerState;
@@ -36,9 +38,11 @@ function adminClientApp() {
 
   const root = document.getElementById("app-root") as HTMLElement | null;
   const errorPanel = document.getElementById("app-error") as HTMLElement | null;
+  const validViews = ["overview","brands","connectors","api-access","audit","apps"];
+  const hashView = location.hash.replace(/^#/, "");
   const uiState: UiState = {
     data: null,
-    view: "overview",
+    view: validViews.includes(hashView) ? hashView : "overview",
     selectedBrandId: null,
     selectedRegionId: null,
     selectedConnectorId: null,
@@ -74,6 +78,12 @@ function adminClientApp() {
       "google-ads":              { product: "google_ads",      configKey: "customer_id" },
       "merchant-center":         { product: "merchant_center", configKey: "merchant_center_id" },
       "google-business-profile": { product: "google_business", configKey: "location_name" }
+    };
+    (window as any).__facebookConnectorBinding = {
+      "facebook-page":     { product: "facebook_page",     configKey: "page_id" },
+      "meta-ads":          { product: "meta_ads",          configKey: "ad_account_id" },
+      "instagram-account": { product: "instagram_account", configKey: "instagram_account_id" },
+      "meta-leads":        { product: "meta_leads",        configKey: "page_id" }
     };
   }
 
@@ -278,12 +288,16 @@ function adminClientApp() {
 
   async function refreshState(): Promise<void> {
     clearError();
-    const [state, accountsRes] = await Promise.all([
+    const [state, accountsRes, linksRes] = await Promise.all([
       requestJson("/admin/api/state"),
-      requestJson("/admin/api/google-accounts").catch(() => ({ accounts: [] }))
+      requestJson("/admin/api/google-accounts").catch(() => ({ accounts: [] })),
+      requestJson("/admin/api/oauth-links").catch(() => ({ links: [] }))
     ]);
     applyState(state);
-    uiState.googleAccounts = (accountsRes.accounts as Item[] | undefined) ?? [];
+    const allAccounts: Item[] = (accountsRes.accounts as Item[] | undefined) ?? [];
+    uiState.googleAccounts = allAccounts.filter((a) => String((a as any).service ?? "") === "google");
+    uiState.accounts = allAccounts;
+    uiState.oauthLinks = (linksRes.links as Item[] | undefined) ?? [];
     // Restore drawer state if returning from OAuth redirect
     const urlParams = typeof window !== "undefined" && window.location
       ? new URLSearchParams(window.location.search)
@@ -331,28 +345,99 @@ function adminClientApp() {
 
   function connectionRows(connections: Item[]): string {
     if (!connections.length) {
-      return `<tr><td colspan="7" class="muted">No connections.</td></tr>`;
+      return `<tr><td colspan="4" class="muted">No connections.</td></tr>`;
     }
-    return connections
-      .map((connection) => {
-        const connector = connectorFor(connection);
-        const region = byId("regions", connection.regionId);
-        const isActive = connection.id === uiState.drawer.connectionId && uiState.drawer.open;
-        return `<tr class="${isActive ? "is-selected" : ""}">
-          <td><strong>${h(connection.displayName)}</strong></td>
-          <td>${h(connector?.name ?? connection.connectorId)}</td>
-          <td>${h(region?.code ?? connection.regionId)}</td>
-          <td>${h(connection.backendType)}</td>
-          <td>${statusBadge(connection.status)}</td>
-          <td>${sourceBadge("connection", connection.id)}</td>
-          <td class="button-row">
-            <button class="btn" type="button"
-                    data-action="open-edit-drawer"
-                    data-connection-id="${h(connection.id)}">Edit</button>
-          </td>
-        </tr>`;
-      })
-      .join("");
+
+    // Build connectionId → oauthLink map
+    const linksByConn = {};
+    for (const link of (uiState.oauthLinks ?? [])) {
+      if (link.connectionId) linksByConn[String(link.connectionId)] = link;
+    }
+
+    function providerOfSlug(slug) {
+      if (slug.startsWith("google") || slug === "merchant-center") return "Google";
+      if (slug.startsWith("facebook") || slug.startsWith("meta") || slug.startsWith("instagram")) return "Meta";
+      if (slug.startsWith("shopify")) return "Shopify";
+      if (slug.startsWith("microsoft") || slug.startsWith("ms-")) return "Microsoft";
+      return "Other";
+    }
+
+    function renderRow(connection) {
+      const connector = connectorFor(connection);
+      const slug = String(connector?.slug ?? "");
+      const binding = (window as any).__googleConnectorBinding?.[slug]
+        ?? (window as any).__facebookConnectorBinding?.[slug];
+      const configKey = binding?.configKey;
+      const cfg = (connection.configSummary ?? {});
+      let propertyPrimary = "";
+      let propertySecondary = "";
+      if (configKey) {
+        const name = cfg[configKey + "_name"];
+        const id = cfg[configKey];
+        if (name) {
+          propertyPrimary = h(String(name));
+          propertySecondary = h(String(id));
+        } else if (id) {
+          propertyPrimary = `<span style="font-family:monospace">${h(String(id))}</span>`;
+        }
+      } else {
+        const val = Object.values(cfg).find((v) => v && v !== "true") ?? "";
+        propertyPrimary = h(String(val));
+      }
+      const idTag = propertySecondary
+        ? `<br><small style="font-size:.7rem;color:var(--muted);font-family:monospace">${propertySecondary}</small>`
+        : "";
+      const link = linksByConn[String(connection.id)];
+      const accountTag = link
+        ? ` <span style="font-size:.75rem;color:var(--muted)">(${h(String(link.externalAccountId))})</span>`
+        : "";
+      const isActive = connection.id === uiState.drawer.connectionId && uiState.drawer.open;
+      return `<tr class="${isActive ? "is-selected" : ""}">
+        <td><strong>${h(connector?.name ?? connection.connectorId)}</strong></td>
+        <td style="font-size:.85rem">${propertyPrimary}${idTag}${accountTag}</td>
+        <td>${statusBadge(connection.status)}</td>
+        <td class="button-row">
+          <button class="btn" type="button"
+                  data-action="open-edit-drawer"
+                  data-connection-id="${h(connection.id)}">Edit</button>
+        </td>
+      </tr>`;
+    }
+
+    // Group by provider first, then by OAuth account within each provider
+    const providerMap = new Map();
+    for (const conn of connections) {
+      const connector = connectorFor(conn);
+      const slug = String(connector?.slug ?? "");
+      const provider = providerOfSlug(slug);
+      const link = linksByConn[String(conn.id)];
+      const accountKey = link ? String(link.externalAccountId) : "";
+
+      if (!providerMap.has(provider)) providerMap.set(provider, new Map());
+      const accountMap = providerMap.get(provider);
+      if (!accountMap.has(accountKey)) accountMap.set(accountKey, []);
+      accountMap.get(accountKey).push(conn);
+    }
+
+    // Single provider, single account — flat, no headers
+    if (providerMap.size === 1) {
+      const [[, accountMap]] = [...providerMap];
+      if (accountMap.size <= 1) {
+        return connections.map(renderRow).join("");
+      }
+    }
+
+    const parts = [];
+    for (const [provider, accountMap] of providerMap) {
+      parts.push(`<tr><td colspan="4" style="background:var(--surface2);padding:3px 8px;font-size:.78rem;font-weight:600;color:var(--muted)">${h(provider)}</td></tr>`);
+      for (const [accountKey, rows] of accountMap) {
+        if (accountKey && accountMap.size > 1) {
+          parts.push(`<tr><td colspan="4" style="padding:2px 16px;font-size:.75rem;color:var(--muted)">↳ ${h(accountKey)}</td></tr>`);
+        }
+        parts.push(...rows.map(renderRow));
+      }
+    }
+    return parts.join("");
   }
 
   function auditRows(events: Item[]): string {
@@ -369,6 +454,89 @@ function adminClientApp() {
         </tr>`
       )
       .join("");
+  }
+
+  function renderGoogleAccountsPanel(): string {
+    const accounts: Item[] = uiState.googleAccounts ?? [];
+    const hasGoogle = Object.keys((window as any).__googleConnectorBinding ?? {}).length > 0;
+    if (!hasGoogle) return "";
+    const rows = accounts.map((a) => {
+      const email = h(String(a.externalAccountId ?? a.displayName ?? a.id));
+      const badge = a.status === "connected"
+        ? `<span class="badge badge-connected">connected</span>`
+        : `<span class="badge badge-disconnected">${h(String(a.status))}</span>`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1">${email}</span>
+        ${badge}
+        <button class="btn btn-sm btn-ghost" type="button"
+                data-action="drawer-oauth-start"
+                data-oauth-path="/oauth/google/account/start"
+                title="Re-authenticate">↺</button>
+      </div>`;
+    }).join("");
+    const emptyState = accounts.length === 0
+      ? `<p style="color:var(--muted);font-size:.85rem;margin:8px 0 12px">No Google account connected. Connect one to enable property auto-selection for GA4, GSC, Ads, Merchant Center, and Business Profile.</p>`
+      : rows;
+    return `<section class="panel" style="margin-bottom:16px">
+      <div class="panel-header">
+        <div>
+          <h3>Google Accounts</h3>
+          <p>One account authenticates all Google service connectors.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${accounts.length > 0 ? `<button class="btn btn-sm" type="button" data-action="sync-property-names" title="Fetch property names from Google and save them to all connections">Sync names</button>` : ""}
+          <button class="btn btn-primary btn-sm" type="button"
+                  data-action="drawer-oauth-start"
+                  data-oauth-path="/oauth/google/account/start">
+            ${accounts.length === 0 ? "Connect Google Account" : "+ Add account"}
+          </button>
+        </div>
+      </div>
+      <div style="padding:0 4px">${emptyState}</div>
+    </section>`;
+  }
+
+  function renderFacebookAccountsPanel(): string {
+    const accounts: Item[] = (uiState.accounts ?? []).filter((a) => a.service === "facebook");
+    const hasFacebook = Object.keys((window as any).__facebookConnectorBinding ?? {}).length > 0;
+    if (!hasFacebook) return "";
+    const rows = accounts.map((a) => {
+      const name = h(String(a.displayName ?? a.externalAccountId ?? a.id));
+      const badge = a.status === "connected"
+        ? `<span class="badge badge-connected">connected</span>`
+        : `<span class="badge badge-disconnected">${h(String(a.status))}</span>`;
+      const expiry = a.tokenExpiryAt
+        ? ` <small style="color:var(--muted);font-size:.75rem">expires ${h(String(a.tokenExpiryAt).slice(0, 10))}</small>`
+        : "";
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1">${name}${expiry}</span>
+        ${badge}
+        <button class="btn btn-sm btn-ghost" type="button"
+                data-action="drawer-oauth-start"
+                data-oauth-path="/oauth/facebook/account/start"
+                title="Re-authenticate">↺</button>
+      </div>`;
+    }).join("");
+    const emptyState = accounts.length === 0
+      ? `<p style="color:var(--muted);font-size:.85rem;margin:8px 0 12px">No Facebook account connected. Connect one to enable Pages, Meta Ads, and Instagram property selection.</p>`
+      : rows;
+    return `<section class="panel" style="margin-bottom:16px">
+      <div class="panel-header">
+        <div>
+          <h3>Facebook / Meta Accounts</h3>
+          <p>One account authenticates Facebook Pages, Meta Ads, and Instagram connectors.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${accounts.length > 0 ? `<button class="btn btn-sm" type="button" data-action="sync-property-names" title="Fetch property names and save to connections">Sync names</button>` : ""}
+          <button class="btn btn-primary btn-sm" type="button"
+                  data-action="drawer-oauth-start"
+                  data-oauth-path="/oauth/facebook/account/start">
+            ${accounts.length === 0 ? "Connect Facebook Account" : "+ Add account"}
+          </button>
+        </div>
+      </div>
+      <div style="padding:0 4px">${emptyState}</div>
+    </section>`;
   }
 
   function renderOverview(): string {
@@ -400,6 +568,8 @@ function adminClientApp() {
         ${metric("Needs attention", issueCount)}
         ${metric("Audit events", collection("auditEvents").length)}
       </div>
+      ${renderGoogleAccountsPanel()}
+      ${renderFacebookAccountsPanel()}
       <div class="grid-two">
         <section class="panel">
           <div class="panel-header">
@@ -407,17 +577,8 @@ function adminClientApp() {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Connector</th><th>Rgn</th><th>Status</th></tr></thead>
-              <tbody>${connections.slice(0, 8).map((connection) => {
-                const connector = connectorFor(connection);
-                const region = byId("regions", connection.regionId);
-                return `<tr>
-                  <td><strong>${h(connection.displayName)}</strong></td>
-                  <td class="small">${h(connector?.name ?? connection.connectorId)}</td>
-                  <td class="small">${h(region?.code ?? connection.regionId)}</td>
-                  <td>${statusBadge(connection.status)}</td>
-                </tr>`;
-              }).join("")}</tbody>
+              <thead><tr><th>Connector</th><th>Property</th><th>Status</th></tr></thead>
+              <tbody>${connectionRows(connections.slice(0, 8))}</tbody>
             </table>
           </div>
         </section>
@@ -679,8 +840,13 @@ function adminClientApp() {
     const { drawer } = uiState;
     const allConnectors = collection("connectors");
     const backendOptions = ((connector?.backendOptions ?? ["native"]) as string[]).filter(Boolean);
-    const requiredFields = ((connector?.requiredFields ?? []) as Item[]).filter((f) => !f.secret);
     const authMode = String(connector?.authMode ?? "none");
+    const connectorSlug = String(connector?.slug ?? "");
+    const pickerConfigKey = ((window as any).__googleConnectorBinding?.[connectorSlug]
+      ?? (window as any).__facebookConnectorBinding?.[connectorSlug])?.configKey;
+    const requiredFields = ((connector?.requiredFields ?? []) as Item[]).filter(
+      (f) => !f.secret && !(pickerConfigKey && String(f.key) === pickerConfigKey)
+    );
 
     // Connector selector (add mode only)
     const connectorSelect = drawer.mode === "add"
@@ -706,14 +872,13 @@ function adminClientApp() {
 
     const skipAuth = authMode === "none";
 
+    const brand = byId("brands", String(uiState.selectedBrandId ?? ""));
+    const region = byId("regions", String(uiState.selectedRegionId ?? ""));
+    const autoName = connection?.displayName
+      || [brand?.name, region?.code, connector?.name].filter(Boolean).join(" ");
     return `<form id="drawer-step1-form" data-action="drawer-save-step1" class="wizard-body">
       ${connectorSelect}
-      <div class="wizard-field">
-        <label>Display name <span style="color:var(--danger)">*</span></label>
-        <input name="displayName" required
-               value="${h(connection?.displayName ?? "")}"
-               placeholder="${h(connector?.name ?? "New connection")}">
-      </div>
+      <input type="hidden" name="displayName" value="${h(autoName)}">
       <input type="hidden" name="backendType" value="${h(connection?.backendType ?? backendOptions[0] ?? "native")}">
       ${fields}
     </form>`;
@@ -728,11 +893,14 @@ function adminClientApp() {
     // OAuth connectors (Shopify, Google, etc.)
     if (authMode === "oauth") {
       const slug = String(connector?.slug ?? "");
-      const isGoogle = slug.startsWith("google");
+      const isGoogle = !!( (window as any).__googleConnectorBinding?.[slug] );
+      const isFacebook = !!( (window as any).__facebookConnectorBinding?.[slug] );
+      const oauthAccountService = isGoogle ? "google" : isFacebook ? "facebook" : null;
+      const oauthPath = isGoogle ? "/oauth/google/account/start" : "/oauth/facebook/account/start";
 
-      // Google: show existing account card if one exists
-      if (isGoogle) {
-        const accounts = uiState.googleAccounts ?? [];
+      // Google / Facebook: show existing account card if one exists
+      if (oauthAccountService) {
+        const accounts = (uiState.accounts ?? []).filter((a) => String((a as any).service ?? "") === oauthAccountService);
         const linkedAccount = accounts.find((a) => a.status === "connected") ?? accounts[0];
 
         if (linkedAccount) {
@@ -742,10 +910,14 @@ function adminClientApp() {
           const accountId = String(linkedAccount.id);
           const connectorSlug = String(connector?.slug ?? "");
           const connectionId = String(uiState.drawer.connectionId ?? "");
-          const binding = (window as any).__googleConnectorBinding?.[connectorSlug];
+          const binding = (window as any).__googleConnectorBinding?.[connectorSlug]
+        ?? (window as any).__facebookConnectorBinding?.[connectorSlug];
           const configKey = binding?.configKey;
           const currentValue = configKey
             ? String((connection?.configSummary as Record<string, string>)?.[configKey] ?? "")
+            : "";
+          const currentDisplayName = configKey
+            ? String((connection?.configSummary as Record<string, string>)?.[configKey + "_name"] ?? "")
             : "";
           const isLoading = uiState.propertyLoading?.has(connectionId);
           const options: Item[] = uiState.propertyOptions?.[connectionId] ?? [];
@@ -755,7 +927,7 @@ function adminClientApp() {
             ? `<div style="font-size:.85rem;color:var(--muted);margin-top:8px">Loading properties…</div>`
             : currentValue
               ? `<div style="font-size:.85rem;margin-top:8px">
-                   <strong>Current:</strong> <code>${h(currentValue)}</code>
+                   <strong>Current:</strong> ${currentDisplayName ? `${h(currentDisplayName)} <code style="font-size:.75rem;color:var(--muted)">(${h(currentValue)})</code>` : `<code>${h(currentValue)}</code>`}
                    <button class="btn btn-link" type="button"
                            style="font-size:.8rem;padding:0 4px;color:var(--muted)"
                            data-action="drawer-clear-property"
@@ -769,10 +941,14 @@ function adminClientApp() {
                     const region = connection ? byId("regions", String(connection.regionId ?? "")) : undefined;
                     const regionDomain = region?.domain ? String(region.domain).replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
                     const suggestedId = regionDomain
-                      ? options.find((o: Item) => {
+                      ? (options.find((o: Item) => {
                           const url = String(o.url ?? "").replace(/^https?:\/\//, "").replace(/\/$/, "");
                           return url === regionDomain || url.endsWith(`.${regionDomain}`) || url.startsWith(regionDomain);
-                        })?.id ?? ""
+                        }) ?? options.find((o: Item) => {
+                          const name = String(o.displayName ?? "").toLowerCase();
+                          const domain = regionDomain.toLowerCase();
+                          return name.includes(domain) || domain.includes(name.split(" ")[0].replace(/[^a-z0-9]/g, ""));
+                        }))?.id ?? ""
                       : "";
                     return `<div style="margin-top:8px">
                      <label style="font-size:.8rem;font-weight:600">Select property</label>
@@ -788,21 +964,30 @@ function adminClientApp() {
                    </div>`;
                   })()
                 : configKey
-                  ? `<div style="font-size:.85rem;color:var(--muted);margin-top:8px">No properties found. Set manually in step 1 or re-authenticate.</div>`
+                  ? `<div style="font-size:.85rem;color:var(--muted);margin-top:8px">
+                       No properties found.
+                       <button class="btn btn-link" type="button"
+                               style="font-size:.85rem;padding:0 4px"
+                               data-action="drawer-oauth-start"
+                               data-oauth-path="${h(oauthPath)}">
+                         Re-authenticate →
+                       </button>
+                     </div>`
                   : "";
 
+          const providerLabel = isFacebook ? "Facebook" : "Google";
           return `<div class="wizard-body">
             <div class="oauth-status oauth-status--connected" style="margin-bottom:12px">
               <strong style="color:${statusColor}">${statusIcon} ${email}</strong>
-              <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">Google account ready to use</div>
+              <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">${h(providerLabel)} account ready to use</div>
             </div>
             <input type="hidden" id="google-account-id" value="${h(accountId)}">
             ${pickerHtml}
             <button class="btn btn-link" type="button"
                     style="font-size:.8rem;padding:4px 0 0;color:var(--muted)"
                     data-action="drawer-oauth-start"
-                    data-oauth-path="/oauth/google/account/start">
-              ↺ Use a different Google account
+                    data-oauth-path="${h(oauthPath)}">
+              ↺ Use a different ${h(providerLabel)} account
             </button>
           </div>`;
         }
@@ -823,9 +1008,11 @@ function adminClientApp() {
       // Determine OAuth start URL per connector slug
       const oauthStartPath = isGoogle
         ? "/oauth/google/account/start"
-        : slug === "shopify"
-          ? "/oauth/shopify/start"
-          : null;
+        : isFacebook
+          ? "/oauth/facebook/account/start"
+          : slug === "shopify"
+            ? "/oauth/shopify/start"
+            : null;
 
       const authoriseBtn = oauthStartPath
         ? `<button class="btn btn-primary" type="button"
@@ -1016,7 +1203,7 @@ function adminClientApp() {
           ${selectedRegion ? `
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Connection</th><th>Connector</th><th>Rgn</th><th>Backend</th><th>Status</th><th></th><th></th></tr></thead>
+              <thead><tr><th>Connector</th><th>Property</th><th>Status</th><th></th></tr></thead>
               <tbody>${connectionRows(connections)}</tbody>
             </table>
           </div>
@@ -1047,27 +1234,43 @@ function adminClientApp() {
   function renderConnectors(): string {
     const allConnectors = (uiState.allConnectors ?? collection("connectors").map((c) => ({ ...c, enabled: true }))) as Item[];
     const enabledCount = allConnectors.filter((c) => c.enabled !== false).length;
-    const rows = allConnectors
-      .map(
-        (connector) => {
-          const enabled = connector.enabled !== false;
-          return `<tr style="${enabled ? "" : "opacity:.5"}">
-            <td><strong>${h(connector.name)}</strong><div class="small muted">${h(connector.slug)}</div></td>
-            <td>${h(connector.category)}</td>
-            <td>${statusBadge(connector.authMode)}</td>
-            <td>${chips((connector.backendOptions ?? []) as unknown[])}</td>
-            <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
-            <td><button class="btn btn-sm" type="button" data-action="toggle-connector" data-connector-id="${h(connector.id)}" data-enabled="${enabled ? "1" : "0"}">${enabled ? "Disable" : "Enable"}</button></td>
-          </tr>`;
-        }
-      )
-      .join("");
+
+    function providerOf(slug) {
+      if (slug.startsWith("google")) return "Google";
+      if (slug.startsWith("facebook") || slug.startsWith("meta") || slug.startsWith("instagram")) return "Meta";
+      if (slug.startsWith("shopify")) return "Shopify";
+      if (slug.startsWith("microsoft") || slug.startsWith("ms-")) return "Microsoft";
+      return "Other";
+    }
+
+    const grouped = new Map();
+    for (const c of allConnectors) {
+      const p = providerOf(String(c.slug ?? ""));
+      if (!grouped.has(p)) grouped.set(p, []);
+      grouped.get(p)!.push(c);
+    }
+
+    const rows: string[] = [];
+    for (const [provider, connectors] of grouped) {
+      rows.push(`<tr><td colspan="5" style="background:var(--surface2);padding:4px 8px;font-size:.78rem;font-weight:600;color:var(--muted)">${h(provider)}</td></tr>`);
+      for (const connector of connectors) {
+        const enabled = connector.enabled !== false;
+        rows.push(`<tr style="${enabled ? "" : "opacity:.5"}">
+          <td><strong>${h(connector.name)}</strong><div class="small muted">${h(connector.slug)}</div></td>
+          <td>${h(connector.category)}</td>
+          <td>${statusBadge(connector.authMode)}</td>
+          <td>${chips(((connector.requiredFields ?? []) as Item[]).map((field) => `${field.label}${field.secret ? " (secret)" : ""}`))}</td>
+          <td><button class="btn btn-sm" type="button" data-action="toggle-connector" data-connector-id="${h(connector.id)}" data-enabled="${enabled ? "1" : "0"}">${enabled ? "Disable" : "Enable"}</button></td>
+        </tr>`);
+      }
+    }
+
     return `${viewHeader("Connectors", `${enabledCount} of ${allConnectors.length} connectors enabled for this deployment.`)}
       <section class="panel">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Backends</th><th>Required fields</th><th></th></tr></thead>
-            <tbody>${rows}</tbody>
+            <thead><tr><th>Connector</th><th>Category</th><th>Auth</th><th>Required fields</th><th></th></tr></thead>
+            <tbody>${rows.join("")}</tbody>
           </table>
         </div>
       </section>`;
@@ -1315,6 +1518,8 @@ function adminClientApp() {
     document.querySelectorAll<HTMLElement>("[data-view]").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.view === uiState.view);
     });
+    const hash = uiState.view && uiState.view !== "overview" ? "#" + uiState.view : "#";
+    if (location.hash !== hash) history.replaceState(null, "", hash || "/admin");
     if (!uiState.data) {
       appRoot.innerHTML = `<div class="loading-panel">Loading gateway state...</div>`;
       return;
@@ -1594,7 +1799,9 @@ function adminClientApp() {
     render();
     try {
       const params = new URLSearchParams({ accountId, connectorSlug, connectionId });
-      const result = await fetch(`/admin/api/google-properties?${params.toString()}`);
+      const isFacebook = !!(window as any).__facebookConnectorBinding?.[connectorSlug];
+      const apiPath = isFacebook ? "/admin/api/facebook-properties" : "/admin/api/google-properties";
+      const result = await fetch(`${apiPath}?${params.toString()}`);
       if (!result.ok) throw new Error(`${result.status}`);
       const data = await result.json() as { properties: Item[] };
       uiState.propertyOptions[connectionId] = data.properties ?? [];
@@ -1768,17 +1975,22 @@ function adminClientApp() {
       const connection = byId("connections", drawer.connectionId);
       const connector = connection ? connectorFor(connection) : undefined;
       const connectorSlug = String(connector?.slug ?? "");
-      const binding = (window as any).__googleConnectorBinding?.[connectorSlug];
+      const binding = (window as any).__googleConnectorBinding?.[connectorSlug]
+        ?? (window as any).__facebookConnectorBinding?.[connectorSlug];
       const configKey: string = binding?.configKey ?? "";
       const select = document.getElementById(`property-picker-${drawer.connectionId}`) as HTMLSelectElement | null;
       const selectedId = select?.value ?? "";
+      const allOpts: Item[] = uiState.propertyOptions?.[drawer.connectionId] ?? [];
+      const selectedOpt = allOpts.find((o: Item) => String(o.id) === selectedId);
+      const selectedName = String(selectedOpt?.displayName ?? "");
 
       if (selectedId && configKey) {
         try {
           const patchResult = await patchJson(`/admin/api/connections/${encodeURIComponent(drawer.connectionId)}`, {
             configSummary: {
               ...((connection?.configSummary as Record<string, string>) ?? {}),
-              [configKey]: selectedId
+              [configKey]: selectedId,
+              ...(selectedName ? { [configKey + "_name"]: selectedName } : {})
             }
           });
           applyState(patchResult.state);
@@ -1811,12 +2023,24 @@ function adminClientApp() {
       if (connection && cfgKey) {
         const updated = { ...((connection.configSummary as Record<string, string>) ?? {}) };
         delete updated[cfgKey];
+        delete updated[cfgKey + "_name"];
         try {
           const patchResult = await patchJson(`/admin/api/connections/${encodeURIComponent(cId)}`, {
             configSummary: updated
           });
           applyState(patchResult.state);
         } catch (_) { /* non-fatal */ }
+      }
+      // Re-trigger property fetch so picker appears immediately
+      const conn = byId("connections", cId);
+      const connector = byId("connectors", String(conn?.connectorId ?? ""));
+      const slug = String(connector?.slug ?? "");
+      const binding = (window as any).__googleConnectorBinding?.[slug]
+        ?? (window as any).__facebookConnectorBinding?.[slug];
+      if (binding) {
+        const googleAccts = uiState.googleAccounts ?? [];
+        const linkedAcct = googleAccts.find((a: Item) => a.status === "connected") ?? googleAccts[0];
+        if (linkedAcct) void fetchPropertyOptions(cId, String(linkedAcct.id), slug);
       }
       render();
       return;
@@ -1894,6 +2118,13 @@ function adminClientApp() {
       const state = await requestJson("/admin/api/state");
       applyState(state);
       await refreshConnectorsState();
+      render();
+      return;
+    }
+    if (action === "sync-property-names") {
+      await postJson("/admin/api/connections/enrich-names");
+      const freshState = await requestJson("/admin/api/state");
+      applyState(freshState);
       render();
       return;
     }

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import type { GoogleOAuthConfig } from "./google-oauth/adapter.js";
+import type { FacebookOAuthConfig } from "./facebook-oauth/adapter.js";
 import type { PipedriveFacadeConfig } from "./pipedrive-facade.js";
 import type { ShopifyOAuthConfig } from "./shopify-oauth/adapter.js";
 
@@ -27,6 +28,7 @@ export interface GatewayConfig {
   pipedriveFacade?: PipedriveFacadeConfig;
   googleOAuth?: GoogleOAuthConfig;
   shopifyOAuth?: ShopifyOAuthConfig;
+  facebookOAuth?: FacebookOAuthConfig;
   googleAdsDevToken?: string;
 }
 
@@ -170,6 +172,18 @@ function parseShopifyOAuthConfig(env: NodeJS.ProcessEnv): ShopifyOAuthConfig | u
   return { apiKey, apiSecret, redirectUri, encryptionKey, scopes };
 }
 
+function parseFacebookOAuthConfig(env: NodeJS.ProcessEnv): FacebookOAuthConfig | undefined {
+  const appId = optionalEnv(env, "FACEBOOK_APP_ID");
+  const appSecret = optionalEnv(env, "FACEBOOK_APP_SECRET");
+  const redirectUri = optionalEnv(env, "FACEBOOK_OAUTH_REDIRECT_URI");
+  const encryptionKey = optionalEnv(env, "FACEBOOK_OAUTH_ENCRYPTION_KEY");
+  if (!appId) return undefined;
+  if (!appSecret) throw new Error("FACEBOOK_APP_SECRET required when FACEBOOK_APP_ID is set");
+  if (!redirectUri) throw new Error("FACEBOOK_OAUTH_REDIRECT_URI required when FACEBOOK_APP_ID is set");
+  if (!encryptionKey) throw new Error("FACEBOOK_OAUTH_ENCRYPTION_KEY required when FACEBOOK_APP_ID is set");
+  return { appId, appSecret, redirectUri, encryptionKey };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const adminDataSource = parseAdminDataSource(env.ADMIN_DATA_SOURCE);
 
@@ -199,6 +213,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     },
     googleOAuth: parseGoogleOAuthConfig(env),
     shopifyOAuth: parseShopifyOAuthConfig(env),
+    facebookOAuth: parseFacebookOAuthConfig(env),
     googleAdsDevToken: optionalEnv(env, "GOOGLE_ADS_DEVELOPER_TOKEN"),
   };
 }

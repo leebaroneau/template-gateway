@@ -205,6 +205,22 @@ export class GatewayAccountStore {
     return rows.map((row) => this.linkFromRow(row));
   }
 
+  listAllLinks(): Array<OAuthAccountLink & { externalAccountId: string; service: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT l.*, a.external_account_id, a.service
+         FROM gateway_oauth_account_links l
+         JOIN gateway_oauth_accounts a ON l.account_id = a.id
+         ORDER BY l.created_at ASC, l.id ASC`
+      )
+      .all() as Array<OAuthAccountLinkRow & { external_account_id: string; service: string }>;
+    return rows.map((row) => ({
+      ...this.linkFromRow(row),
+      externalAccountId: row.external_account_id,
+      service: row.service
+    }));
+  }
+
   getLinkForScope(query: AccountScopeQuery): OAuthAccountLink | undefined {
     const row = this.db
       .prepare(

@@ -1,3 +1,5 @@
+const BUILD_TS = Date.now();
+
 export function renderAdminPage(): string {
   return `<!doctype html>
 <html lang="en">
@@ -33,7 +35,7 @@ export function renderAdminPage(): string {
         </section>
       </main>
     </div>
-    <script src="/admin/app.js?v=fixture-ui"></script>
+    <script src="/admin/app.js?v=${BUILD_TS}"></script>
   </body>
 </html>`;
 }

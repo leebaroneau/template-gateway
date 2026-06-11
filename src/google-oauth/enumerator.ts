@@ -62,17 +62,33 @@ export class GooglePropertyEnumerator {
     claimedResourceIds: Map<string, string>,
     fetchFn: typeof fetch
   ): Promise<PropertyEntry[]> {
-    const data = await this.getJson(
-      "https://analyticsadmin.googleapis.com/v1beta/properties?filter=parent:account/~all&pageSize=200",
-      this.authHeader(accessToken),
+    const headers = this.authHeader(accessToken);
+    const accountsData = await this.getJson(
+      "https://analyticsadmin.googleapis.com/v1beta/accounts?pageSize=200",
+      headers,
       fetchFn
     );
-    return ((data.properties ?? []) as any[]).map((p) => ({
-      id: String(p.name),
-      displayName: String(p.displayName ?? p.name),
-      url: p.websiteUri ? String(p.websiteUri) : undefined,
-      ...this.mark(String(p.name), claimedResourceIds)
-    }));
+    const accounts: any[] = accountsData.accounts ?? [];
+    const results = await Promise.all(
+      accounts.map(async (account) => {
+        const accountId = String(account.name ?? "").replace("accounts/", "");
+        if (!accountId) return [];
+        try {
+          const data = await this.getJson(
+            `https://analyticsadmin.googleapis.com/v1beta/properties?filter=parent:accounts/${accountId}&pageSize=200`,
+            headers,
+            fetchFn
+          );
+          return ((data.properties ?? []) as any[]).map((p) => ({
+            id: String(p.name),
+            displayName: String(p.displayName ?? p.name),
+            url: p.websiteUri ? String(p.websiteUri) : undefined,
+            ...this.mark(String(p.name), claimedResourceIds)
+          }));
+        } catch { return []; }
+      })
+    );
+    return results.flat();
   }
 
   private async listGSC(

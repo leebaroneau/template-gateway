@@ -18,6 +18,9 @@ import { createGoogleOAuthRouter } from "./google-oauth/routes.js";
 import { ShopifyOAuthAdapter } from "./shopify-oauth/adapter.js";
 import { GatewayShopifyStore } from "./shopify-oauth/store.js";
 import { createShopifyOAuthRouter } from "./shopify-oauth/routes.js";
+import { FacebookOAuthAdapter } from "./facebook-oauth/adapter.js";
+import { FacebookPropertyEnumerator } from "./facebook-oauth/enumerator.js";
+import { createFacebookOAuthRouter } from "./facebook-oauth/routes.js";
 import { GatewayAppInstallStore } from "./apps/store.js";
 import { GatewayAccountStore } from "./account-credentials/store.js";
 import { GoogleAccountLinker } from "./google-oauth/linker.js";
@@ -86,6 +89,13 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     });
   });
 
+  const facebookAdapter = config.facebookOAuth
+    ? new FacebookOAuthAdapter(config.facebookOAuth)
+    : undefined;
+  const facebookEnumerator = config.facebookOAuth && facebookAdapter
+    ? new FacebookPropertyEnumerator(facebookAdapter, accountStore)
+    : undefined;
+
   const googleLinker = config.googleOAuth && googleAdapter && googleStore
     ? new GoogleAccountLinker(adminBackend, accountStore, googleStore, googleAdapter, accessStore)
     : undefined;
@@ -94,7 +104,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     ? new GooglePropertyEnumerator(googleAdapter, accountStore, googleStore, config.googleAdsDevToken)
     : undefined;
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker, googleEnumerator));
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker, googleEnumerator, facebookEnumerator));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry, mcpConnectionBaseUrl: config.mcpConnectionBaseUrl }));
   app.use(
     "/mcp/v1/connections/:connectionId",
@@ -137,6 +147,15 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
       adapter: shopifyAdapter,
       store: config.shopifyOAuth ? shopifyStore : undefined,
       bearer: config.gatewayBearer,
+    })
+  );
+
+  app.use(
+    "/oauth/facebook",
+    createFacebookOAuthRouter({
+      config: config.facebookOAuth,
+      adapter: facebookAdapter,
+      accountStore
     })
   );
 

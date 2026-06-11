@@ -6,6 +6,8 @@ import type { ConnectorAdapterRegistry } from "../connectors/registry.js";
 import type { GatewayAccountStore } from "../account-credentials/store.js";
 import type { GoogleAccountLinker } from "../google-oauth/linker.js";
 import type { GooglePropertyEnumerator } from "../google-oauth/enumerator.js";
+import type { FacebookPropertyEnumerator } from "../facebook-oauth/enumerator.js";
+import { facebookConnectorBinding } from "../facebook-oauth/types.js";
 import { googleConnectorBinding } from "../google-oauth/types.js";
 import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
@@ -47,7 +49,8 @@ function sendError(res: Response, error: unknown): void {
 }
 
 function noStore(res: Response): void {
-  res.set("Cache-Control", "no-store");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.removeHeader("ETag");
 }
 
 function firstNonEmptyHeader(value: string | string[] | undefined): string | undefined {
@@ -120,7 +123,8 @@ export function createAdminRouter(
   connectorRegistry?: ConnectorAdapterRegistry,
   accountStore?: GatewayAccountStore,
   googleLinker?: GoogleAccountLinker,
-  googleEnumerator?: GooglePropertyEnumerator
+  googleEnumerator?: GooglePropertyEnumerator,
+  facebookEnumerator?: FacebookPropertyEnumerator
 ): express.Router {
   const router = express.Router();
 
@@ -164,13 +168,18 @@ export function createAdminRouter(
     }
   });
 
+  router.get("/api/oauth-links", (_req: Request, res: Response) => {
+    if (!accountStore) return res.json({ links: [] });
+    res.json({ links: accountStore.listAllLinks() });
+  });
+
   // Google account helpers — no bearer needed (auth-gate secures /admin/*)
   router.get("/api/google-accounts", (_req: Request, res: Response) => {
     if (!accountStore) {
       res.json({ accounts: [] });
       return;
     }
-    const accounts = accountStore.listAccounts("google").map(({ id, service, externalAccountId, displayName, status, tokenExpiryAt, createdAt, updatedAt }) =>
+    const accounts = accountStore.listAccounts().map(({ id, service, externalAccountId, displayName, status, tokenExpiryAt, createdAt, updatedAt }) =>
       ({ id, service, externalAccountId, displayName, status, tokenExpiryAt, createdAt, updatedAt })
     );
     res.json({ accounts });
@@ -185,7 +194,7 @@ export function createAdminRouter(
       const body = req.body as { accountId?: string; connectionIds?: string[] };
       let accountId = body.accountId;
       if (!accountId) {
-        const accounts = accountStore.listAccounts("google");
+        const accounts = accountStore.listAccounts();
         if (accounts.length === 1) {
           accountId = accounts[0].id;
         } else {
@@ -256,6 +265,115 @@ export function createAdminRouter(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(502).json({ error: "upstream_error", message });
+    }
+  });
+
+  router.get("/api/facebook-properties", async (req: Request, res: Response) => {
+    if (!accountStore || !facebookEnumerator) {
+      res.status(501).json({ error: "not_configured", message: "Facebook property enumerator not configured." });
+      return;
+    }
+    try {
+      const accountId = String(req.query.accountId ?? "");
+      const connectorSlug = String(req.query.connectorSlug ?? "");
+      const connectionId = req.query.connectionId ? String(req.query.connectionId) : undefined;
+
+      const binding = facebookConnectorBinding[connectorSlug];
+      if (!binding) {
+        res.status(400).json({ error: "unknown_connector", message: `Unknown connector slug: ${connectorSlug}` });
+        return;
+      }
+
+      const { product, configKey } = binding;
+      const state = await backend.snapshot();
+      const connectorMap = new Map(state.connectors.map((c) => [c.id, c]));
+      const claimedMap = new Map<string, string>();
+
+      for (const conn of state.connections) {
+        if (conn.id === connectionId) continue;
+        const connDef = connectorMap.get(conn.connectorId);
+        if (!connDef) continue;
+        const b = facebookConnectorBinding[connDef.slug];
+        if (!b || b.product !== product) continue;
+        const resourceId = conn.configSummary[configKey];
+        if (resourceId) claimedMap.set(String(resourceId), conn.id);
+      }
+
+      const properties = await facebookEnumerator.listProperties(accountId, product, claimedMap, fetch);
+      noStore(res);
+      res.json({ properties });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: "upstream_error", message });
+    }
+  });
+
+  router.post("/api/connections/enrich-names", async (_req: Request, res: Response) => {
+    noStore(res);
+    try {
+      if (!accountStore) {
+        res.json({ ok: true, updated: 0, skipped: 0, reason: "account store not configured" });
+        return;
+      }
+      const snapshot = await backend.snapshot();
+      const connectorMap = new Map(snapshot.connectors.map((c) => [c.id, c]));
+      const allLinks = accountStore.listAllLinks();
+      const linkByConn = new Map<string, (typeof allLinks)[0]>();
+      for (const link of allLinks) {
+        if (link.connectionId) linkByConn.set(link.connectionId, link);
+      }
+      const normalizeGa4 = (id: string): string => String(id).replace(/^properties\//, "");
+      let updated = 0;
+      let skipped = 0;
+
+      for (const conn of snapshot.connections) {
+        const connDef = connectorMap.get(conn.connectorId);
+        if (!connDef) { skipped++; continue; }
+        const cfg = conn.configSummary as Record<string, string>;
+        const link = linkByConn.get(conn.id);
+        if (!link) { skipped++; continue; }
+
+        // Google connectors
+        const gBinding = googleConnectorBinding[connDef.slug];
+        if (gBinding && googleEnumerator) {
+          const { product, configKey } = gBinding;
+          if (cfg[configKey + "_name"]) { skipped++; continue; }
+          const rawId = cfg[configKey];
+          if (!rawId) { skipped++; continue; }
+          try {
+            const properties = await googleEnumerator.listProperties(link.accountId, product, new Map(), fetch);
+            const match = properties.find((p) => normalizeGa4(String(p.id)) === normalizeGa4(rawId));
+            if (match) {
+              await backend.updateConnection(conn.id, { configSummary: { ...cfg, [configKey + "_name"]: match.displayName } });
+              updated++;
+            } else { skipped++; }
+          } catch { skipped++; }
+          continue;
+        }
+
+        // Facebook connectors
+        const fbBinding = facebookConnectorBinding[connDef.slug];
+        if (fbBinding && facebookEnumerator) {
+          const { product, configKey } = fbBinding;
+          if (cfg[configKey + "_name"]) { skipped++; continue; }
+          const rawId = cfg[configKey];
+          if (!rawId) { skipped++; continue; }
+          try {
+            const properties = await facebookEnumerator.listProperties(link.accountId, product, new Map(), fetch);
+            const match = properties.find((p) => String(p.id) === rawId);
+            if (match) {
+              await backend.updateConnection(conn.id, { configSummary: { ...cfg, [configKey + "_name"]: match.displayName } });
+              updated++;
+            } else { skipped++; }
+          } catch { skipped++; }
+          continue;
+        }
+
+        skipped++;
+      }
+      res.json({ ok: true, updated, skipped });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 

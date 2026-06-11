@@ -1,5 +1,5 @@
-export type OAuthService = "google" | "shopify";
-export const oauthServices: OAuthService[] = ["google", "shopify"];
+export type OAuthService = "google" | "shopify" | "facebook";
+export const oauthServices: OAuthService[] = ["google", "shopify", "facebook"];
 
 export type OAuthAccountStatus = "connected" | "needs_reconnect" | "error";
 
