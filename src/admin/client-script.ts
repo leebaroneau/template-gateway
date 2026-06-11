@@ -349,12 +349,12 @@ function adminClientApp() {
     }
 
     // Build connectionId → oauthLink map
-    const linksByConn = {};
+    const linksByConn: Record<string, any> = {};
     for (const link of (uiState.oauthLinks ?? [])) {
       if (link.connectionId) linksByConn[String(link.connectionId)] = link;
     }
 
-    function providerOfSlug(slug) {
+    function providerOfSlug(slug: string) {
       if (slug.startsWith("google") || slug === "merchant-center") return "Google";
       if (slug.startsWith("facebook") || slug.startsWith("meta") || slug.startsWith("instagram")) return "Meta";
       if (slug.startsWith("shopify")) return "Shopify";
@@ -362,13 +362,13 @@ function adminClientApp() {
       return "Other";
     }
 
-    function renderRow(connection) {
+    function renderRow(connection: any) {
       const connector = connectorFor(connection);
       const slug = String(connector?.slug ?? "");
       const binding = (window as any).__googleConnectorBinding?.[slug]
         ?? (window as any).__facebookConnectorBinding?.[slug];
       const configKey = binding?.configKey;
-      const cfg = (connection.configSummary ?? {});
+      const cfg: Record<string, any> = (connection.configSummary ?? {});
       let propertyPrimary = "";
       let propertySecondary = "";
       if (configKey) {
@@ -1235,7 +1235,7 @@ function adminClientApp() {
     const allConnectors = (uiState.allConnectors ?? collection("connectors").map((c) => ({ ...c, enabled: true }))) as Item[];
     const enabledCount = allConnectors.filter((c) => c.enabled !== false).length;
 
-    function providerOf(slug) {
+    function providerOf(slug: string) {
       if (slug.startsWith("google")) return "Google";
       if (slug.startsWith("facebook") || slug.startsWith("meta") || slug.startsWith("instagram")) return "Meta";
       if (slug.startsWith("shopify")) return "Shopify";
