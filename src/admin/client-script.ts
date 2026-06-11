@@ -30,6 +30,7 @@ function adminClientApp() {
     allConnectors?: Item[];
     accounts?: Item[];
     googleAccounts?: Item[];
+    shopifyStores?: Item[];
     oauthLinks?: Item[];
     propertyOptions?: Record<string, Item[]>;
     propertyLoading?: Set<string>;
@@ -84,6 +85,9 @@ function adminClientApp() {
       "meta-ads":          { product: "meta_ads",          configKey: "ad_account_id" },
       "instagram-account": { product: "instagram_account", configKey: "instagram_account_id" },
       "meta-leads":        { product: "meta_leads",        configKey: "page_id" }
+    };
+    (window as any).__shopifyConnectorBinding = {
+      "shopify": { configKey: "shop_domain" }
     };
   }
 
@@ -288,16 +292,18 @@ function adminClientApp() {
 
   async function refreshState(): Promise<void> {
     clearError();
-    const [state, accountsRes, linksRes] = await Promise.all([
+    const [state, accountsRes, linksRes, shopifyRes] = await Promise.all([
       requestJson("/admin/api/state"),
       requestJson("/admin/api/google-accounts").catch(() => ({ accounts: [] })),
-      requestJson("/admin/api/oauth-links").catch(() => ({ links: [] }))
+      requestJson("/admin/api/oauth-links").catch(() => ({ links: [] })),
+      requestJson("/admin/api/shopify-stores").catch(() => ({ stores: [] }))
     ]);
     applyState(state);
     const allAccounts: Item[] = (accountsRes.accounts as Item[] | undefined) ?? [];
     uiState.googleAccounts = allAccounts.filter((a) => String((a as any).service ?? "") === "google");
     uiState.accounts = allAccounts;
     uiState.oauthLinks = (linksRes.links as Item[] | undefined) ?? [];
+    uiState.shopifyStores = (shopifyRes.stores as Item[] | undefined) ?? [];
     // Restore drawer state if returning from OAuth redirect
     const urlParams = typeof window !== "undefined" && window.location
       ? new URLSearchParams(window.location.search)
@@ -366,7 +372,8 @@ function adminClientApp() {
       const connector = connectorFor(connection);
       const slug = String(connector?.slug ?? "");
       const binding = (window as any).__googleConnectorBinding?.[slug]
-        ?? (window as any).__facebookConnectorBinding?.[slug];
+        ?? (window as any).__facebookConnectorBinding?.[slug]
+        ?? (window as any).__shopifyConnectorBinding?.[slug];
       const configKey = binding?.configKey;
       const cfg: Record<string, any> = (connection.configSummary ?? {});
       let propertyPrimary = "";
@@ -539,6 +546,37 @@ function adminClientApp() {
     </section>`;
   }
 
+  function renderShopifyStoresPanel(): string {
+    const stores: Item[] = uiState.shopifyStores ?? [];
+    const hasShopify = Object.keys((window as any).__shopifyConnectorBinding ?? {}).length > 0;
+    if (!hasShopify) return "";
+    const rows = stores.map((s) => {
+      const domain = h(String(s.shop ?? s.id ?? ""));
+      const badge = s.status === "connected"
+        ? `<span class="badge badge-connected">connected</span>`
+        : `<span class="badge badge-disconnected">${h(String(s.status))}</span>`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1;font-family:monospace;font-size:.85rem">${domain}</span>
+        ${badge}
+      </div>`;
+    }).join("");
+    const emptyState = stores.length === 0
+      ? `<p style="color:var(--muted);font-size:.85rem;margin:8px 0 12px">No Shopify stores connected. Connect one to enable store property selection when setting up Shopify connections.</p>`
+      : rows;
+    return `<section class="panel" style="margin-bottom:16px">
+      <div class="panel-header">
+        <div>
+          <h3>Shopify Stores</h3>
+          <p>Connected stores are available as options when setting up Shopify connections.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" type="button" data-action="shopify-connect-prompt">
+          + Connect store
+        </button>
+      </div>
+      <div style="padding:0 4px">${emptyState}</div>
+    </section>`;
+  }
+
   function renderOverview(): string {
     const brands = collection("brands");
     const regions = collection("regions");
@@ -570,6 +608,7 @@ function adminClientApp() {
       </div>
       ${renderGoogleAccountsPanel()}
       ${renderFacebookAccountsPanel()}
+      ${renderShopifyStoresPanel()}
       <div class="grid-two">
         <section class="panel">
           <div class="panel-header">
@@ -843,7 +882,8 @@ function adminClientApp() {
     const authMode = String(connector?.authMode ?? "none");
     const connectorSlug = String(connector?.slug ?? "");
     const pickerConfigKey = ((window as any).__googleConnectorBinding?.[connectorSlug]
-      ?? (window as any).__facebookConnectorBinding?.[connectorSlug])?.configKey;
+      ?? (window as any).__facebookConnectorBinding?.[connectorSlug]
+      ?? (window as any).__shopifyConnectorBinding?.[connectorSlug])?.configKey;
     const requiredFields = ((connector?.requiredFields ?? []) as Item[]).filter(
       (f) => !f.secret && !(pickerConfigKey && String(f.key) === pickerConfigKey)
     );
@@ -895,8 +935,62 @@ function adminClientApp() {
       const slug = String(connector?.slug ?? "");
       const isGoogle = !!( (window as any).__googleConnectorBinding?.[slug] );
       const isFacebook = !!( (window as any).__facebookConnectorBinding?.[slug] );
+      const isShopify = !!( (window as any).__shopifyConnectorBinding?.[slug] );
       const oauthAccountService = isGoogle ? "google" : isFacebook ? "facebook" : null;
       const oauthPath = isGoogle ? "/oauth/google/account/start" : "/oauth/facebook/account/start";
+
+      // Shopify: show connected store picker
+      if (isShopify) {
+        const stores: Item[] = uiState.shopifyStores ?? [];
+        if (stores.length === 0) {
+          return `<div class="wizard-body">
+            <div class="oauth-status oauth-status--disconnected" style="margin-bottom:12px">
+              <strong>No Shopify stores connected.</strong>
+              <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">Connect a store from the Overview page first.</div>
+            </div>
+            <button class="btn btn-primary" type="button" data-action="shopify-connect-prompt">
+              Connect Shopify Store
+            </button>
+          </div>`;
+        }
+        const shopifyConnectionId = String(uiState.drawer.connectionId ?? "");
+        void fetchPropertyOptions(shopifyConnectionId, "", slug);
+        const shopifyOptions = (uiState.propertyOptions ?? {})[shopifyConnectionId];
+        const configKey = (window as any).__shopifyConnectorBinding?.[slug]?.configKey ?? "shop_domain";
+        const cfg = (connection?.configSummary ?? {}) as Record<string, string>;
+        const currentId = cfg[configKey];
+        const currentName = cfg[configKey + "_name"] ?? currentId;
+        const pickerHtml = shopifyOptions == null
+          ? `<div style="color:var(--muted);font-size:.85rem">Loading stores…</div>`
+          : shopifyOptions.length === 0
+            ? `<div style="color:var(--muted);font-size:.85rem">No stores found.</div>`
+            : `<div style="display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto">
+                ${currentId ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <span style="font-family:monospace;font-size:.85rem;flex:1">${h(String(currentName))}</span>
+                  <button class="btn btn-sm" type="button" data-action="drawer-clear-property" data-config-key="${h(configKey)}">Change</button>
+                </div>` : ""}
+                ${!currentId ? shopifyOptions.map((p: any) => {
+                  const label = h(String(p.displayName ?? p.id));
+                  return `<button class="btn" style="text-align:left;font-family:monospace;font-size:.85rem" type="button"
+                    data-action="drawer-confirm-property"
+                    data-config-key="${h(configKey)}"
+                    data-property-id="${h(String(p.id))}"
+                    data-property-name="${h(String(p.displayName ?? p.id))}">${label}</button>`;
+                }).join("") : ""}
+               </div>`;
+        return `<div class="wizard-body">
+          <div style="margin-bottom:12px">
+            <strong>Select Shopify Store</strong>
+            <div style="font-size:.8rem;margin-top:2px;color:var(--muted)">Choose which connected store to link to this connection.</div>
+          </div>
+          ${pickerHtml}
+          <button class="btn btn-link" type="button"
+                  style="font-size:.8rem;padding:4px 0 0;color:var(--muted)"
+                  data-action="shopify-connect-prompt">
+            + Connect a different store
+          </button>
+        </div>`;
+      }
 
       // Google / Facebook: show existing account card if one exists
       if (oauthAccountService) {
@@ -1755,7 +1849,7 @@ function adminClientApp() {
           const googleAccts = uiState.googleAccounts ?? [];
           const linkedAcct = googleAccts.find((a) => a.status === "connected") ?? googleAccts[0];
           if (linkedAcct && uiState.drawer.connectionId) {
-            void fetchPropertyOptions(uiState.drawer.connectionId, String(linkedAcct.id), slug);
+            void fetchPropertyOptions(uiState.drawer.connectionId, linkedAcct ? String(linkedAcct.id) : "", slug);
           }
         }
       }
@@ -1798,13 +1892,29 @@ function adminClientApp() {
     uiState.propertyLoading.add(connectionId);
     render();
     try {
-      const params = new URLSearchParams({ accountId, connectorSlug, connectionId });
+      const isShopify = !!(window as any).__shopifyConnectorBinding?.[connectorSlug];
       const isFacebook = !!(window as any).__facebookConnectorBinding?.[connectorSlug];
-      const apiPath = isFacebook ? "/admin/api/facebook-properties" : "/admin/api/google-properties";
-      const result = await fetch(`${apiPath}?${params.toString()}`);
+      let result: Response;
+      if (isShopify) {
+        result = await fetch("/admin/api/shopify-stores");
+      } else {
+        const params = new URLSearchParams({ accountId, connectorSlug, connectionId });
+        const apiPath = isFacebook ? "/admin/api/facebook-properties" : "/admin/api/google-properties";
+        result = await fetch(`${apiPath}?${params.toString()}`);
+      }
       if (!result.ok) throw new Error(`${result.status}`);
-      const data = await result.json() as { properties: Item[] };
-      uiState.propertyOptions[connectionId] = data.properties ?? [];
+      const data = await result.json() as { properties?: Item[]; stores?: Item[] };
+      if (data.stores) {
+        // Shopify: map stores to property entry shape
+        uiState.propertyOptions[connectionId] = data.stores.map((s: any) => ({
+          id: String(s.shop ?? s.id),
+          displayName: String(s.shop ?? s.id),
+          url: `https://${s.shop ?? s.id}`,
+          alreadyClaimed: false
+        }));
+      } else {
+        uiState.propertyOptions[connectionId] = data.properties ?? [];
+      }
     } catch (err) {
       uiState.propertyOptions[connectionId] = [];
       console.warn("[gateway] property fetch failed:", err instanceof Error ? err.message : String(err));
@@ -2036,11 +2146,18 @@ function adminClientApp() {
       const connector = byId("connectors", String(conn?.connectorId ?? ""));
       const slug = String(connector?.slug ?? "");
       const binding = (window as any).__googleConnectorBinding?.[slug]
-        ?? (window as any).__facebookConnectorBinding?.[slug];
+        ?? (window as any).__facebookConnectorBinding?.[slug]
+        ?? (window as any).__shopifyConnectorBinding?.[slug];
       if (binding) {
-        const googleAccts = uiState.googleAccounts ?? [];
-        const linkedAcct = googleAccts.find((a: Item) => a.status === "connected") ?? googleAccts[0];
-        if (linkedAcct) void fetchPropertyOptions(cId, String(linkedAcct.id), slug);
+        const isShopifySlug = !!(window as any).__shopifyConnectorBinding?.[slug];
+        if (isShopifySlug) {
+          void fetchPropertyOptions(cId, "", slug);
+        } else {
+          const service = (window as any).__facebookConnectorBinding?.[slug] ? "facebook" : "google";
+          const accts = (uiState.accounts ?? []).filter((a: any) => String(a.service ?? "") === service);
+          const linkedAcct = accts.find((a: any) => a.status === "connected") ?? accts[0];
+          if (linkedAcct) void fetchPropertyOptions(cId, String(linkedAcct.id), slug);
+        }
       }
       render();
       return;
@@ -2133,13 +2250,17 @@ function adminClientApp() {
       await refreshAppsState();
       return;
     }
-    if (action === "shopify-connect") {
+    if (action === "shopify-connect" || action === "shopify-connect-prompt") {
       const shop = prompt("Enter shop domain (e.g. brand.myshopify.com):");
-      if (!shop || !shop.trim()) {
+      if (!shop || !shop.trim()) return;
+      const result = await postJson("/oauth/shopify/install", { shop: shop.trim() });
+      if (result?.redirectUrl) {
+        window.location.href = result.redirectUrl;
         return;
       }
-      await postJson("/oauth/shopify/install", { shop: shop.trim() });
-      await refreshAppsState();
+      const freshStores = await requestJson("/admin/api/shopify-stores").catch(() => ({ stores: [] }));
+      uiState.shopifyStores = (freshStores.stores as Item[] | undefined) ?? [];
+      render();
     }
   }
 

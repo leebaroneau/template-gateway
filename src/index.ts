@@ -104,7 +104,7 @@ export function createApp(config = loadConfig(), options: CreateAppOptions = {})
     ? new GooglePropertyEnumerator(googleAdapter, accountStore, googleStore, config.googleAdsDevToken)
     : undefined;
 
-  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker, googleEnumerator, facebookEnumerator));
+  app.use("/admin", createAdminRouter(adminBackend, accessStore, appInstallStore, connectorRegistry, accountStore, googleLinker, googleEnumerator, facebookEnumerator, shopifyStore));
   app.use("/api/v1", createGatewayApiRouter({ backend: adminBackend, accessStore, appInstallStore, shopifyStore, connectorRegistry, mcpConnectionBaseUrl: config.mcpConnectionBaseUrl }));
   app.use(
     "/mcp/v1/connections/:connectionId",

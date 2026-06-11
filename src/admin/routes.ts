@@ -8,6 +8,7 @@ import type { GoogleAccountLinker } from "../google-oauth/linker.js";
 import type { GooglePropertyEnumerator } from "../google-oauth/enumerator.js";
 import type { FacebookPropertyEnumerator } from "../facebook-oauth/enumerator.js";
 import { facebookConnectorBinding } from "../facebook-oauth/types.js";
+import type { GatewayShopifyStore } from "../shopify-oauth/store.js";
 import { googleConnectorBinding } from "../google-oauth/types.js";
 import { statusCodeForAdminError } from "./backend-error.js";
 import { adminClientScript } from "./client-script.js";
@@ -124,7 +125,8 @@ export function createAdminRouter(
   accountStore?: GatewayAccountStore,
   googleLinker?: GoogleAccountLinker,
   googleEnumerator?: GooglePropertyEnumerator,
-  facebookEnumerator?: FacebookPropertyEnumerator
+  facebookEnumerator?: FacebookPropertyEnumerator,
+  shopifyStore?: GatewayShopifyStore
 ): express.Router {
   const router = express.Router();
 
@@ -266,6 +268,18 @@ export function createAdminRouter(
       const message = err instanceof Error ? err.message : String(err);
       res.status(502).json({ error: "upstream_error", message });
     }
+  });
+
+  router.get("/api/shopify-stores", (_req: Request, res: Response) => {
+    noStore(res);
+    if (!shopifyStore) {
+      res.json({ stores: [] });
+      return;
+    }
+    const creds = shopifyStore.listCredentials().map(({ id, shop, status, scope, createdAt, updatedAt }) =>
+      ({ id, shop, status, scope, createdAt, updatedAt })
+    );
+    res.json({ stores: creds });
   });
 
   router.get("/api/facebook-properties", async (req: Request, res: Response) => {
